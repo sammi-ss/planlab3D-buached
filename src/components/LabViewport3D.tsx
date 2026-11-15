@@ -73,6 +73,7 @@ const CAMERA_PRESETS: Record<
   CameraPreset,
   { pos: [number, number, number]; target: [number, number, number] }
 > = {
+  reset: { pos: [14.5, 16.5, 19.5], target: [0, 0.3, 0] },
   iso: { pos: [14.5, 16.5, 19.5], target: [0, 0.3, 0] },
   top: { pos: [0, 26.5, 0.01], target: [0, 0, 0] },
   front: { pos: [0, 2, 22], target: [0, 0.3, 0] },
@@ -1113,6 +1114,14 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       const ctx = sceneCtxRef.current;
       if (!ctx || props.cameraPresetTick === 0) return;
       const p = CAMERA_PRESETS[props.cameraPreset];
+      if (props.cameraPreset === 'reset') {
+        ctx.camGoal = {
+          pos: new THREE.Vector3(...p.pos),
+          target: new THREE.Vector3(...p.target),
+        };
+        ctx.requestRender();
+        return;
+      }
       const currentDist = THREE.MathUtils.clamp(
         ctx.camera.position.distanceTo(ctx.controls.target),
         1.0,

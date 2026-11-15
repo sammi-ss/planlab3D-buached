@@ -3,6 +3,7 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
+  Home,
   PlusSquare,
   RotateCcw,
   RotateCw,
@@ -100,6 +101,15 @@ export function BottomDock({
               <span>{label}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => onSelectCamera('reset')}
+            title="กลับไปมุมมองเริ่มต้น (ภาพมุมสูงและระยะซูมเริ่มต้น)"
+            className="w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:border-teal-600 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-teal-500 dark:hover:text-teal-300"
+          >
+            <Home className="h-3.5 w-3.5 shrink-0 text-teal-700 dark:text-teal-400" aria-hidden="true" />
+            <span>เริ่มต้น (มุมสูง)</span>
+          </button>
           <button
             type="button"
             onClick={onToggleAutoRotate}

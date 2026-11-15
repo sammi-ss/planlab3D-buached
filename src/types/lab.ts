@@ -25,7 +25,7 @@ export type EditorTool = 'inspect' | 'move';
 
 export type GridStep = 0.1 | 0.25 | 0.5;
 
-export type CameraPreset = 'iso' | 'top' | 'front' | 'side' | 'center' | 'frontDoor' | 'backDoor';
+export type CameraPreset = 'reset' | 'iso' | 'top' | 'front' | 'side' | 'center' | 'frontDoor' | 'backDoor';
 
 export type FlowType = 'specimen' | 'waste' | 'staff';
 
