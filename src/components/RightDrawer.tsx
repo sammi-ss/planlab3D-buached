@@ -11,6 +11,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { ENABLE_COMPLIANCE_ANALYSIS } from '../config/features';
 import { EQUIPMENT_CATALOG } from '../data/presets';
 import type {
   ComplianceRuleResult,
@@ -138,8 +139,7 @@ export function RightDrawer({
           {(
             [
               ['inspector', 'รายละเอียด'],
-              ['compliance', 'IC / LA'],
-              ['compare', 'เปรียบเทียบ'],
+              ...(ENABLE_COMPLIANCE_ANALYSIS ? [['compliance', 'IC / LA'], ['compare', 'เปรียบเทียบ']] : []),
               ['catalog', 'เพิ่มของ'],
             ] as [DrawerTab, string][]
           ).map(([id, label]) => (

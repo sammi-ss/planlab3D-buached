@@ -211,7 +211,7 @@ export function computeFlowAnalysis(scenario: LabScenario): {
   const routes: FlowRoute[] = [
     {
       type: 'specimen',
-      labelTh: 'เส้นทางสิ่งส่งตรวจ (Specimen)',
+      labelTh: 'แนวการไหลเชิงแนวคิด (Specimen)',
       color: '#0F766E',
       points: specimenPoints,
       segments: specimenSegments,
@@ -220,7 +220,7 @@ export function computeFlowAnalysis(scenario: LabScenario): {
     },
     {
       type: 'waste',
-      labelTh: 'เส้นทางขยะติดเชื้อ (Infectious waste)',
+      labelTh: 'แนวการไหลเชิงแนวคิด (Infectious waste)',
       color: '#D85A30',
       points: wastePoints,
       segments: wasteSegments,
@@ -229,7 +229,7 @@ export function computeFlowAnalysis(scenario: LabScenario): {
     },
     {
       type: 'staff',
-      labelTh: 'เส้นทางเดินเจ้าหน้าที่',
+      labelTh: 'แนวการไหลเชิงแนวคิด (Staff)',
       color: '#6D28D9',
       points: staffPoints,
       segments: staffSegments,

@@ -41,7 +41,7 @@ function getDefaultStore(): PersistedStore {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     scenarios: DEFAULT_SCENARIOS,
     activeScenarioId: DEFAULT_SCENARIOS[0].id,
-    compareScenarioId: DEFAULT_SCENARIOS[1]?.id ?? DEFAULT_SCENARIOS[0].id,
+    compareScenarioId: DEFAULT_SCENARIOS[0].id,
   };
 }
 
@@ -226,7 +226,7 @@ function migrateV1ToV2(draft: StoreDraft): PersistedStore {
     activeScenarioId: activeValid ? draft.activeScenarioId! : DEFAULT_SCENARIOS[0].id,
     compareScenarioId: compareValid
       ? draft.compareScenarioId!
-      : (DEFAULT_SCENARIOS[1]?.id ?? DEFAULT_SCENARIOS[0].id),
+      : (merged[1]?.id ?? DEFAULT_SCENARIOS[0].id),
   };
 }
 

@@ -17,6 +17,7 @@ import {
   Sun,
   Upload,
 } from 'lucide-react';
+import { ENABLE_COMPLIANCE_ANALYSIS } from '../config/features';
 import type { LabScenario } from '../types/lab';
 
 interface TopBarProps {
@@ -26,7 +27,7 @@ interface TopBarProps {
   canUndo: boolean;
   canRedo: boolean;
   activeDrawerTab: 'inspector' | 'compliance' | 'compare' | 'catalog' | null;
-  complianceSummary: { passed: number; total: number };
+  complianceSummary?: { passed: number; total: number };
   user: User | null;
   cloudSyncing: boolean;
   onLogin: () => void;
@@ -114,44 +115,50 @@ export function TopBar({
           <span className="hidden md:inline">สร้างสำเนาผัง</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() =>
-            onOpenDrawerTab(activeDrawerTab === 'compliance' ? null : 'compliance')
-          }
-          aria-pressed={activeDrawerTab === 'compliance'}
-          title="ตรวจสอบเกณฑ์มาตรฐาน IC และ LA สภาเทคนิคการแพทย์"
-          className={`inline-flex h-9 shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-teal-600 whitespace-nowrap ${
-            activeDrawerTab === 'compliance'
-              ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-600'
-              : 'border-slate-200 bg-white text-slate-700 hover:border-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-          }`}
-        >
-          <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="hidden sm:inline">มาตรฐาน IC/LA</span>
-          <span className="sm:hidden">IC/LA</span>
-          <span className="font-mono-tabular text-xs opacity-85">
-            ({complianceSummary.passed}/{complianceSummary.total})
-          </span>
-        </button>
+        {ENABLE_COMPLIANCE_ANALYSIS && (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                onOpenDrawerTab(activeDrawerTab === 'compliance' ? null : 'compliance')
+              }
+              aria-pressed={activeDrawerTab === 'compliance'}
+              title="ตรวจสอบเกณฑ์มาตรฐาน IC และ LA สภาเทคนิคการแพทย์"
+              className={`inline-flex h-9 shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-teal-600 whitespace-nowrap ${
+                activeDrawerTab === 'compliance'
+                  ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-600'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">มาตรฐาน IC/LA</span>
+              <span className="sm:hidden">IC/LA</span>
+              {complianceSummary && (
+                <span className="font-mono-tabular text-xs opacity-85">
+                  ({complianceSummary.passed}/{complianceSummary.total})
+                </span>
+              )}
+            </button>
 
-        <button
-          type="button"
-          onClick={() =>
-            onOpenDrawerTab(activeDrawerTab === 'compare' ? null : 'compare')
-          }
-          aria-pressed={activeDrawerTab === 'compare'}
-          title="เปรียบเทียบทางเลือกสำหรับผู้บริหาร"
-          className={`inline-flex h-9 shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-teal-600 whitespace-nowrap ${
-            activeDrawerTab === 'compare'
-              ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-600'
-              : 'border-slate-200 bg-white text-slate-700 hover:border-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-          }`}
-        >
-          <BarChart3 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="hidden md:inline">เทียบทางเลือกผู้บริหาร</span>
-          <span className="hidden sm:inline md:hidden">เปรียบเทียบ</span>
-        </button>
+            <button
+              type="button"
+              onClick={() =>
+                onOpenDrawerTab(activeDrawerTab === 'compare' ? null : 'compare')
+              }
+              aria-pressed={activeDrawerTab === 'compare'}
+              title="เปรียบเทียบทางเลือกสำหรับผู้บริหาร"
+              className={`inline-flex h-9 shrink-0 items-center gap-1 sm:gap-1.5 rounded-lg border px-2 sm:px-3 text-xs sm:text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-teal-600 whitespace-nowrap ${
+                activeDrawerTab === 'compare'
+                  ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-600'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="hidden md:inline">เทียบทางเลือกผู้บริหาร</span>
+              <span className="hidden sm:inline md:hidden">เปรียบเทียบ</span>
+            </button>
+          </>
+        )}
       </div>
 
       {/* Zone 3: Undo/Redo, Theme & Primary Export */}

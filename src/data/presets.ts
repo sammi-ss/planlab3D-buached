@@ -269,7 +269,7 @@ function cloneScenarioData(): Pick<LabScenario, 'zones' | 'equipment' | 'walls' 
   };
 }
 
-function buildIcOptimizedScenario(): LabScenario {
+export function buildIcOptimizedScenario(): LabScenario {
   const base = cloneScenarioData();
   // 1. Widen main corridor spacing by compacting Prep aliquot bench slightly downward
   const prBench2 = base.equipment.find((e) => e.id === 'eq-pr-b2');
@@ -315,19 +315,18 @@ export const DEFAULT_SCENARIOS: LabScenario[] = [
     ...cloneScenarioData(),
     updatedAt: new Date().toISOString(),
   },
-  buildIcOptimizedScenario(),
 ];
 
 export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [
   {
     type: 'sink',
     label: 'Handwash Sink',
-    labelTh: 'อ่างล้างมือ IC',
+    labelTh: 'อ่างล้างมือ',
     width: 1.6,
     depth: 0.75,
     height: 0.85,
     baseY: 0,
-    summary: 'อ่างล้างมือมาตรฐาน IC พร้อมก๊อกน้ำสแตนเลส',
+    summary: 'อ่างล้างมือพร้อมก๊อกน้ำสแตนเลส',
   },
   {
     type: 'bench',

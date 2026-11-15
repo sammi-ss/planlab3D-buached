@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: './',
+    base: '/planlab3D-buached/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

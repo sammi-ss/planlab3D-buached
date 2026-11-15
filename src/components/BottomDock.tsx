@@ -52,10 +52,9 @@ export function BottomDock({
 
   return (
     <div
-      className={`pointer-events-none fixed z-20 flex flex-col items-center transition-transform duration-200
-        bottom-2 inset-x-2 max-w-[calc(100vw-16px)]
-        sm:bottom-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-[min(960px,calc(100vw-32px))] sm:max-w-4xl
-        ${collapsed ? 'translate-y-[calc(100%-28px)]' : 'translate-y-0'}
+      className={`pointer-events-none fixed z-20 flex items-start transition-transform duration-200
+        top-[72px] left-3 max-h-[calc(100vh-90px)] w-[260px] max-w-[90vw] flex-col
+        ${collapsed ? '-translate-x-[calc(100%+16px)]' : 'translate-x-0'}
       `}
     >
       {/* Collapse / Expand Handle */}
@@ -63,71 +62,23 @@ export function BottomDock({
         type="button"
         onClick={onToggleCollapse}
         aria-expanded={!collapsed}
-        title="ซ่อนหรือแสดงแถบเครื่องมือ (ปุ่ม H)"
-        className="pointer-events-auto mb-1 inline-flex h-7 sm:h-8 items-center gap-1.5 rounded-t-lg border border-b-0 border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 shadow-sm hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white"
+        title="ซ่อนหรือแสดงแถบเครื่องมือด้านข้าง (ปุ่ม H)"
+        className="pointer-events-auto absolute -right-9 top-2 inline-flex h-8 w-8 items-center justify-center rounded-r-lg border border-l-0 border-slate-200 bg-white text-slate-600 shadow-sm hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white"
       >
         {collapsed ? (
-          <>
-            <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>แสดงแถบควบคุม</span>
-          </>
+          <ChevronUp className="h-4 w-4 rotate-90" aria-hidden="true" />
         ) : (
-          <>
-            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>ซ่อนแถบควบคุม (H)</span>
-          </>
+          <ChevronDown className="h-4 w-4 rotate-90" aria-hidden="true" />
         )}
       </button>
 
-      {/* Main Unified Control Dock */}
-      <div className="pointer-events-auto flex w-full flex-col md:flex-row md:flex-wrap items-center justify-between gap-1.5 sm:gap-2 rounded-xl border border-slate-200 bg-white p-1.5 sm:p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
-        {/* Mobile Category Switcher (< md) */}
-        <div className="flex md:hidden w-full items-center justify-between border-b border-slate-100 pb-1.5 dark:border-slate-800">
-          <div className="flex items-center gap-1 w-full justify-around">
-            <button
-              type="button"
-              onClick={() => setMobileCategory('camera')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                mobileCategory === 'camera'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              มุมกล้อง
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileCategory('tools')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                mobileCategory === 'tools'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              เครื่องมือผัง
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileCategory('flows')}
-              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                mobileCategory === 'flows'
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              เส้นทาง Flow {crossingsCount > 0 ? `(${crossingsCount})` : ''}
-            </button>
-          </div>
-        </div>
-
+      {/* Main Unified Control Dock (Vertical Sidebar) */}
+      <div className="pointer-events-auto flex w-full flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95 overflow-y-auto max-h-[calc(100vh-100px)] no-scrollbar">
         {/* Group 1: Camera Views */}
-        <div
-          className={`items-center gap-1 overflow-x-auto no-scrollbar py-0.5 ${
-            mobileCategory === 'camera' ? 'flex w-full md:w-auto justify-center sm:justify-start' : 'hidden md:flex'
-          }`}
-          role="group"
-          aria-label="มุมกล้อง"
-        >
+        <div className="flex flex-col gap-1.5" role="group" aria-label="มุมกล้อง">
+          <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">
+            มุมมองกล้อง
+          </p>
           {(
             [
               ['iso', 'มุมเอียง'],
@@ -141,168 +92,133 @@ export function BottomDock({
               type="button"
               onClick={() => onSelectCamera(id)}
               aria-pressed={cameraPreset === id && !autoRotate}
-              className={`h-8 sm:h-9 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+              className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center justify-between ${
                 cameraPreset === id && !autoRotate
                   ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                  : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
               }`}
             >
-              {label}
+              <span>{label}</span>
             </button>
           ))}
           <button
             type="button"
             onClick={onToggleAutoRotate}
             aria-pressed={autoRotate}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 ${
               autoRotate
                 ? 'bg-teal-700 text-white dark:bg-teal-600'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
-            <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="hidden xs:inline">หมุนอัตโนมัติ</span>
-            <span className="xs:hidden">หมุน</span>
+            <RotateCw className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>หมุนอัตโนมัติ</span>
           </button>
         </div>
 
-        <div className="hidden h-6 w-px bg-slate-200 md:block dark:bg-slate-700" aria-hidden="true" />
+        <div className="h-px w-full bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
 
-        {/* Group 2: Layout Actions (unified drag & orbit behavior) */}
-        <div
-          className={`items-center gap-1 overflow-x-auto no-scrollbar py-0.5 ${
-            mobileCategory === 'tools' ? 'flex w-full md:w-auto justify-center sm:justify-start' : 'hidden md:flex'
-          }`}
-          role="group"
-          aria-label="เครื่องมือผัง"
-        >
+        {/* Group 2: Layout Actions */}
+        <div className="flex flex-col gap-1.5" role="group" aria-label="เครื่องมือผัง">
+          <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">
+            จัดการผัง
+          </p>
           <button
             type="button"
             onClick={onToggleCatalog}
             aria-pressed={catalogOpen}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg border px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 border ${
               catalogOpen
                 ? 'border-teal-700 bg-teal-50 text-teal-800 dark:border-teal-500 dark:bg-teal-950/60 dark:text-teal-200'
                 : 'border-slate-200 bg-white text-slate-700 hover:border-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
             }`}
           >
-            <PlusSquare className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">เพิ่มครุภัณฑ์</span>
-            <span className="sm:hidden">เพิ่มของ</span>
+            <PlusSquare className="h-3.5 w-3.5 shrink-0 text-teal-700 dark:text-teal-400" aria-hidden="true" />
+            <span>เพิ่มครุภัณฑ์</span>
           </button>
           {onResetCurrentScenario && (
             <button
               type="button"
               onClick={onResetCurrentScenario}
-              title="คืนค่าผังนี้เป็นค่าเริ่มต้น (Reset to Default)"
-              className="inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 sm:px-2.5 text-xs font-medium text-slate-700 transition-colors hover:border-rose-400 hover:text-rose-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-rose-400 whitespace-nowrap shrink-0"
+              title="คืนค่าผังนี้เป็นค่าเริ่มต้น"
+              className="w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 border border-slate-200 bg-white text-slate-700 hover:border-rose-400 hover:text-rose-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-rose-400"
             >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="hidden sm:inline">คืนค่าเดิม</span>
-              <span className="sm:hidden">คืนค่า</span>
+              <RotateCcw className="h-3.5 w-3.5 shrink-0 text-rose-500" aria-hidden="true" />
+              <span>คืนค่าเดิม</span>
             </button>
           )}
         </div>
 
-        <div className="hidden h-6 w-px bg-slate-200 md:block dark:bg-slate-700" aria-hidden="true" />
+        <div className="h-px w-full bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
 
-        {/* Group 3: Flow & IC Overlays */}
-        <div
-          className={`items-center gap-1 overflow-x-auto no-scrollbar py-0.5 ${
-            mobileCategory === 'flows' ? 'flex w-full md:w-auto justify-start sm:justify-start px-0.5' : 'hidden md:flex'
-          }`}
-          role="group"
-          aria-label="ชั้นข้อมูลเส้นทางและป้ายชื่อ"
-        >
+        {/* Group 3: Flow & Overlays */}
+        <div className="flex flex-col gap-1.5" role="group" aria-label="ชั้นข้อมูลเส้นทางและป้ายชื่อ">
+          <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-1">
+            แนวการไหลและป้าย
+          </p>
           <button
             type="button"
             onClick={onToggleLabels}
             aria-pressed={showLabels}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 ${
               showLabels
                 ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
-            <Tag className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>ป้ายชื่อ</span>
+            <Tag className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>แสดงป้ายชื่อ</span>
           </button>
           <button
             type="button"
             onClick={() => onToggleFlow('specimen')}
             aria-pressed={activeFlows.specimen}
-            title={activeFlows.specimen ? 'ซ่อนเส้นทาง Specimen Flow' : 'แสดงเส้นทาง Specimen Flow'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 ${
               activeFlows.specimen
                 ? 'bg-teal-700 text-white dark:bg-teal-600'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             {activeFlows.specimen ? (
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             ) : (
-              <EyeOff className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+              <EyeOff className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
             )}
-            <span className="inline-block h-0.5 w-3.5 bg-teal-300" aria-hidden="true" />
-            <span>Specimen</span>
+            <span className="truncate">แนวการไหล (Specimen)</span>
           </button>
           <button
             type="button"
             onClick={() => onToggleFlow('waste')}
             aria-pressed={activeFlows.waste}
-            title={activeFlows.waste ? 'ซ่อนเส้นทาง Infectious Waste Flow' : 'แสดงเส้นทาง Infectious Waste Flow'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 ${
               activeFlows.waste
                 ? 'bg-[#D85A30] text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             {activeFlows.waste ? (
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             ) : (
-              <EyeOff className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+              <EyeOff className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
             )}
-            <span className="inline-block h-0 w-3.5 border-t-2 border-dashed border-orange-200" aria-hidden="true" />
-            <span className="hidden sm:inline">Infectious Waste</span>
-            <span className="sm:hidden">ขยะติดเชื้อ</span>
+            <span className="truncate">แนวการไหล (Waste)</span>
           </button>
           <button
             type="button"
             onClick={() => onToggleFlow('staff')}
             aria-pressed={activeFlows.staff}
-            title={activeFlows.staff ? 'ซ่อนเส้นทางเดินเจ้าหน้าที่' : 'แสดงเส้นทางเดินเจ้าหน้าที่'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+            className={`w-full h-8.5 rounded-lg px-3 text-xs font-medium text-left transition-colors flex items-center gap-2 ${
               activeFlows.staff
                 ? 'bg-violet-700 text-white dark:bg-violet-600'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             {activeFlows.staff ? (
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+              <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             ) : (
-              <EyeOff className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
+              <EyeOff className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden="true" />
             )}
-            <span className="h-2 w-2 rounded-sm bg-violet-300" aria-hidden="true" />
-            <span>เจ้าหน้าที่</span>
-          </button>
-          <button
-            type="button"
-            onClick={onToggleCrossings}
-            aria-pressed={showCrossings}
-            title={showCrossings ? 'ซ่อนจุดตัดเสี่ยง IC' : 'แสดงจุดตัดเสี่ยง IC'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-              showCrossings
-                ? 'bg-rose-700 text-white'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
-            }`}
-          >
-            {showCrossings ? (
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <EyeOff className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-            )}
-            <span className="hidden sm:inline">จุดตัด IC ({crossingsCount})</span>
-            <span className="sm:hidden">จุดตัด ({crossingsCount})</span>
+            <span className="truncate">แนวการไหล (Staff)</span>
           </button>
         </div>
       </div>

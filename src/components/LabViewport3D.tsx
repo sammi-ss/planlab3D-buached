@@ -15,6 +15,7 @@ import {
   createSpriteLabel,
   disposeObject3D,
 } from '../three/equipmentFactory';
+import { ENABLE_COMPLIANCE_ANALYSIS } from '../config/features';
 import type {
   CameraPreset,
   CrossingAlert,
@@ -1408,7 +1409,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       }
 
       // Cross-Contamination warning markers
-      if (props.showCrossings) {
+      if (ENABLE_COMPLIANCE_ANALYSIS && props.showCrossings) {
         for (const alert of props.crossings) {
           const ring = new THREE.Mesh(
             new THREE.TorusGeometry(0.45, 0.06, 12, 24),

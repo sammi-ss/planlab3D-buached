@@ -143,7 +143,7 @@ describe('schemaVersion & migrate()', () => {
     const migrated = migrate(v1Store);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated.activeScenarioId).toBe(DEFAULT_SCENARIOS[0].id);
-    expect(migrated.compareScenarioId).toBe(DEFAULT_SCENARIOS[1].id);
+    expect(migrated.compareScenarioId).toBe(migrated.scenarios[1]?.id ?? DEFAULT_SCENARIOS[0].id);
 
     const userCopy = migrated.scenarios.find((s) => s.id === 'user-v1-copy');
     expect(userCopy).toBeDefined();
