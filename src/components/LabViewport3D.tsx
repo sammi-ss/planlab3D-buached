@@ -75,6 +75,9 @@ const CAMERA_PRESETS: Record<
 > = {
   iso: { pos: [14.5, 16.5, 19.5], target: [0, 0.3, 0] },
   top: { pos: [0, 26.5, 0.01], target: [0, 0, 0] },
+  front: { pos: [0, 2, 22], target: [0, 0.3, 0] },
+  side: { pos: [24, 6, 0], target: [0, 0.3, 0] },
+  center: { pos: [0, 14, 18], target: [0, 0.3, 0] },
   frontDoor: { pos: [-19.5, 6.2, 0.4], target: [-4.5, 0.5, 0] },
   backDoor: { pos: [19.5, 7.2, -3.5], target: [5.5, 0.5, -2.5] },
 };
@@ -193,10 +196,22 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = !isSoftwareGl;
       controls.dampingFactor = 0.08;
-      controls.maxPolarAngle = Math.PI / 2 - 0.03;
-      controls.minPolarAngle = 0.04;
-      controls.minDistance = 4.5;
-      controls.maxDistance = 48;
+      controls.enablePan = true;
+      controls.enableRotate = true;
+      controls.enableZoom = true;
+      controls.screenSpacePanning = true;
+      controls.zoomToCursor = true;
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.ROTATE,
+        RIGHT: THREE.MOUSE.ROTATE,
+      };
+      controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN,
+      };
+      controls.minDistance = 1.0;
+      controls.maxDistance = 80.0;
       controls.target.set(...CAMERA_PRESETS.iso.target);
       controls.autoRotateSpeed = 0.9;
 
@@ -423,6 +438,45 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         ctxObj.camGoal = null;
         propsRef.current.onUserOrbitStart();
       });
+
+      // Task 5: Double-click object = zoom to object, Double-click empty floor = center room
+      const onDblClick = (e: MouseEvent) => {
+        updateNdc(e as unknown as PointerEvent);
+        _raycaster.setFromCamera(_ndc, camera);
+        const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
+        const hitRoot = getPrioritizedHit(hits, true, propsRef.current.selection);
+        if (hitRoot) {
+          const box = new THREE.Box3().setFromObject(hitRoot);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z, 1.5);
+          ctxObj.camGoal = {
+            pos: new THREE.Vector3(center.x + maxDim * 1.8, center.y + maxDim * 1.5, center.z + maxDim * 1.8),
+            target: new THREE.Vector3(center.x, center.y, center.z),
+          };
+          requestRender();
+        } else {
+          const currentDist = THREE.MathUtils.clamp(
+            camera.position.distanceTo(controls.target),
+            1.0,
+            80.0,
+          );
+          const roomCenter = new THREE.Vector3(0, 0.3, 0);
+          const offset = camera.position.clone().sub(controls.target);
+          if (offset.lengthSq() < 1e-6) {
+            offset.set(...CAMERA_PRESETS.center.pos).sub(roomCenter);
+          }
+          offset.setLength(currentDist);
+          ctxObj.camGoal = {
+            pos: roomCenter.clone().add(offset),
+            target: roomCenter,
+          };
+          requestRender();
+        }
+      };
+      renderer.domElement.addEventListener('dblclick', onDblClick);
 
       // WebGL context loss safety
       const onContextLost = (e: Event) => {
@@ -1030,6 +1084,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         renderer.domElement.removeEventListener('pointerup', onPointerUp);
         renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
         renderer.domElement.removeEventListener('lostpointercapture', onLostPointerCapture);
+        renderer.domElement.removeEventListener('dblclick', onDblClick);
         window.removeEventListener('keydown', onKeyDown);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
         renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
@@ -1051,15 +1106,34 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       ctx.requestRender();
     }, [props.isDark]);
 
-    // Trigger camera preset smooth transitions
+    // Trigger camera preset smooth transitions (preserve current zoom distance)
     useEffect(() => {
       const ctx = sceneCtxRef.current;
       if (!ctx || props.cameraPresetTick === 0) return;
       const p = CAMERA_PRESETS[props.cameraPreset];
-      ctx.camGoal = {
-        pos: new THREE.Vector3(...p.pos),
-        target: new THREE.Vector3(...p.target),
-      };
+      const currentDist = THREE.MathUtils.clamp(
+        ctx.camera.position.distanceTo(ctx.controls.target),
+        1.0,
+        80.0,
+      );
+      const goalTarget = new THREE.Vector3(...p.target);
+      if (props.cameraPreset === 'center') {
+        const currentOffset = ctx.camera.position.clone().sub(ctx.controls.target);
+        if (currentOffset.lengthSq() < 1e-6) {
+          currentOffset.set(...p.pos).sub(goalTarget);
+        }
+        currentOffset.setLength(currentDist);
+        ctx.camGoal = {
+          pos: goalTarget.clone().add(currentOffset),
+          target: goalTarget,
+        };
+      } else {
+        const dir = new THREE.Vector3(...p.pos).sub(goalTarget).normalize();
+        ctx.camGoal = {
+          pos: goalTarget.clone().addScaledVector(dir, currentDist),
+          target: goalTarget,
+        };
+      }
       ctx.requestRender();
     }, [props.cameraPreset, props.cameraPresetTick]);
 

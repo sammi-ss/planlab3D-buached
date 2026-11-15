@@ -834,8 +834,8 @@ export default function App() {
             />
           )}
 
-          {/* Subtle Top-Left Legend & Context Hint (no backdrop-filter over WebGL) */}
-          <div className="pointer-events-none fixed left-2.5 top-[60px] sm:left-3 sm:top-[68px] z-10 flex flex-col gap-1.5">
+          {/* Subtle Top-Center Legend & Context Hint (no backdrop-filter over WebGL) */}
+          <div className="pointer-events-none fixed left-1/2 top-[60px] sm:top-[68px] z-10 -translate-x-1/2 flex flex-col items-center gap-1.5">
             {/* Desktop full legend */}
             <div className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-200 bg-white/95 px-3 py-1.5 text-xs text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-300">
               <span className="inline-flex items-center gap-1.5">

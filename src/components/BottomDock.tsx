@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -48,7 +47,6 @@ export function BottomDock({
   onToggleCatalog,
   onResetCurrentScenario,
 }: BottomDockProps) {
-  const [mobileCategory, setMobileCategory] = useState<'camera' | 'tools' | 'flows'>('camera');
 
   return (
     <div
@@ -83,8 +81,9 @@ export function BottomDock({
             [
               ['iso', 'มุมเอียง'],
               ['top', 'มองจากบน'],
-              ['frontDoor', 'ประตูหน้า'],
-              ['backDoor', 'ประตูหลัง'],
+              ['front', 'ด้านหน้า'],
+              ['side', 'ด้านข้าง'],
+              ['center', 'กึ่งกลาง'],
             ] as [CameraPreset, string][]
           ).map(([id, label]) => (
             <button

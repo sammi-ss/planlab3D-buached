@@ -37,7 +37,7 @@ const BASELINE_ZONES: LabZone[] = [
     category: 'clean',
     ...pxBox(42, 66, 460, 110),
     color: TE,
-    description: 'โซนตรวจวิเคราะห์หลัก (Coagulation, Chem BS-430 + ISE, CBC Mindray Autoload, UA และอ่างล้างมือติดหน้าต่าง)',
+    description: 'โซนตรวจวิเคราะห์หลัก (Coagulation, Chem BS-430, CBC Mindray, UA และอ่างล้างมือติดหน้าต่าง)',
   },
   {
     id: 'zone-micro',
@@ -145,10 +145,10 @@ const BASELINE_EQUIPMENT: LabEquipment[] = [
   { id: 'eq-an-b1', type: 'bench', label: 'Coagulation Bench', labelTh: 'โต๊ะวางเครื่อง Coagulation', zoneId: 'zone-analyzers', ...pxBox(52, 68, 122, 54), height: 0.55, baseY: 0, rotationDeg: 0 },
   { id: 'eq-an-b2', type: 'bench', label: 'CBC Analyzer Bench', labelTh: 'โต๊ะวางเครื่อง CBC Mindray', zoneId: 'zone-analyzers', ...pxBox(284, 68, 82, 54), height: 0.55, baseY: 0, rotationDeg: 0 },
   { id: 'eq-an-b3', type: 'bench', label: 'UA Analyzer Bench', labelTh: 'โต๊ะวางเครื่อง UA (ติดหน้าต่าง 2)', zoneId: 'zone-analyzers', ...pxBox(374, 68, 72, 54), height: 0.55, baseY: 0, rotationDeg: 0 },
-  { id: 'eq-an-m1', type: 'analyzer', label: 'Coagulation analyzer', labelTh: 'Coagulation analyzer (ตรวจการแข็งตัวของเลือด)', zoneId: 'zone-analyzers', ...pxBox(62, 73, 86, 44), height: 0.36, baseY: 0.55, rotationDeg: 0, showNameTag: true },
-  { id: 'eq-an-tower', type: 'analyzer', label: 'Chem BS-430 (ISE)', labelTh: 'Chem analyzer Mindray BS-430 (เคมีคลินิก + Electrolyte)', zoneId: 'zone-analyzers', ...pxBox(184, 68, 90, 52), height: 1.08, baseY: 0, rotationDeg: 0, showNameTag: true, notes: 'Mindray BS-430 ตรวจทั้งเคมีคลินิกและ Electrolyte (ISE) ในเครื่องเดียว' },
-  { id: 'eq-an-cbc', type: 'analyzer', label: 'CBC Mindray (Autoload)', labelTh: 'CBC analyzer Mindray รุ่นเก่า (Autoload)', zoneId: 'zone-analyzers', ...pxBox(290, 73, 70, 44), height: 0.56, baseY: 0.55, rotationDeg: 0, showNameTag: true, notes: 'เครื่องตรวจ CBC อัตโนมัติ Mindray รุ่นเก่า รองรับชุด Autoloader วางในโซน Analyzers' },
-  { id: 'eq-an-ua', type: 'analyzer', label: 'UA analyzer', labelTh: 'UA analyzer (ใกล้หน้าต่างระบายอากาศ)', zoneId: 'zone-analyzers', ...pxBox(380, 75, 60, 38), height: 0.24, baseY: 0.55, rotationDeg: 0, showNameTag: true, notes: 'ย้ายมาวางฝั่งหน้าต่างระบายอากาศ แยกออกจาก Clean Zone' },
+  { id: 'eq-an-m1', type: 'analyzer', label: 'Coagulation analyzer', labelTh: 'Coagulation analyzer ', zoneId: 'zone-analyzers', ...pxBox(62, 73, 86, 44), height: 0.36, baseY: 0.55, rotationDeg: 0, showNameTag: true },
+  { id: 'eq-an-tower', type: 'analyzer', label: 'Chem BS-430', labelTh: 'Chem analyzer Mindray BS-430', zoneId: 'zone-analyzers', ...pxBox(184, 68, 90, 52), height: 1.08, baseY: 0, rotationDeg: 0, showNameTag: true, notes: 'Mindray BS-430 เครื่องตรวจวิเคราะห์อัตโนมัติ' },
+  { id: 'eq-an-cbc', type: 'analyzer', label: 'CBC Mindray', labelTh: 'CBC analyzer Mindray', zoneId: 'zone-analyzers', ...pxBox(290, 73, 70, 44), height: 0.56, baseY: 0.55, rotationDeg: 0, showNameTag: true, notes: 'เครื่องตรวจ CBC อัตโนมัติ Mindray วางในโซน Analyzers' },
+  { id: 'eq-an-ua', type: 'analyzer', label: 'UA analyzer', labelTh: 'UA analyzer ', zoneId: 'zone-analyzers', ...pxBox(380, 75, 60, 38), height: 0.24, baseY: 0.55, rotationDeg: 0, showNameTag: true, notes: 'ย้ายมาวางฝั่งหน้าต่างระบายอากาศ แยกออกจาก Clean Zone' },
 
   // Micro Zone (ชิดกำแพงฝั่งหน้าต่างด้านบน: UA -> อ่างล้างมือ -> Hood ย้อม -> Hood เตรียม -> BSC)
   { id: 'eq-mi-s1', type: 'sink', label: 'อ่างล้างมือ', labelTh: 'อ่างล้างมือ (ข้าง UA และ Hood ย้อม)', zoneId: 'zone-analyzers', ...pxBox(454, 68, 60, 38), height: 0.85, baseY: 0, rotationDeg: 0, showNameTag: true, notes: 'ตั้งชิดกำแพงฝั่งหน้าต่าง ถัดจาก UA และติดกับ Hood ย้อม' },
@@ -172,7 +172,7 @@ const BASELINE_EQUIPMENT: LabEquipment[] = [
   { id: 'eq-re-ch2', type: 'officeChair', label: 'เก้าอี้รับแลป 2', labelTh: 'เก้าอี้เจ้าหน้าที่รับแลป 2', zoneId: 'zone-reception', ...pxBox(108, 272, 28, 28), height: 0.72, baseY: 0, rotationDeg: -90 },
   { id: 'eq-re-rack', type: 'rack', label: 'Specimen Triage Rack', labelTh: 'ชั้นแยกหลอดสิ่งส่งตรวจ', zoneId: 'zone-reception', ...pxBox(162, 196, 56, 44), height: 0.75, baseY: 0, rotationDeg: 0 },
   { id: 'eq-re-bar', type: 'bench', label: 'โต๊ะคอมผล/กล้อง', labelTh: 'โต๊ะคอมผลและกล้อง (ข้าง Reception)', zoneId: 'zone-reception', ...pxBox(162, 248, 58, 80), height: 0.55, baseY: 0, rotationDeg: 0, notes: 'จุดคอมพิวเตอร์ลงผลและกล้องจุลทรรศน์ข้างจุดรับแลป' },
-  { id: 'eq-re-pc-res', type: 'pc', label: 'คอมผล (ข้าง Reception)', labelTh: 'คอมพิวเตอร์ออกผล (ข้าง Reception)', zoneId: 'zone-reception', ...pxBox(168, 252, 42, 34), height: 0.4, baseY: 0.55, rotationDeg: -90, showNameTag: true },
+  { id: 'eq-re-pc-res', type: 'pc', label: 'คอมออกผล (ข้าง Reception)', labelTh: 'คอมพิวเตอร์ออกผล (ข้าง Reception)', zoneId: 'zone-reception', ...pxBox(168, 252, 42, 34), height: 0.4, baseY: 0.55, rotationDeg: -90, showNameTag: true },
   { id: 'eq-re-scope', type: 'microscope', label: 'กล้องจุลทรรศน์ (Reception)', labelTh: 'กล้องจุลทรรศน์ (ข้างคอมผล Reception)', zoneId: 'zone-reception', ...pxBox(172, 290, 36, 30), height: 0.36, baseY: 0.55, rotationDeg: -90, showNameTag: true },
 
   // Prep Zone
@@ -340,24 +340,24 @@ export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [
   },
   {
     type: 'analyzer',
-    label: 'Chem BS-430 (ISE)',
+    label: 'Chem BS-430',
     labelTh: 'Chem analyzer Mindray BS-430',
     width: 2.3,
     depth: 1.3,
     height: 1.08,
     baseY: 0,
-    summary: 'ตรวจเคมีคลินิกและ Electrolyte (ISE) ในเครื่องเดียว',
+    summary: 'เครื่องตรวจวิเคราะห์อัตโนมัติ Mindray BS-430',
     showNameTag: true,
   },
   {
     type: 'analyzer',
-    label: 'CBC Mindray (Autoload)',
-    labelTh: 'CBC analyzer Mindray (Autoload)',
+    label: 'CBC Mindray',
+    labelTh: 'CBC analyzer Mindray',
     width: 1.75,
     depth: 1.1,
     height: 0.56,
     baseY: 0.55,
-    summary: 'เครื่องตรวจ CBC รุ่นเก่าพร้อมชุด Autoloader (ตั้งโต๊ะ)',
+    summary: 'เครื่องตรวจ CBC อัตโนมัติ (ตั้งโต๊ะ)',
     showNameTag: true,
   },
   {
