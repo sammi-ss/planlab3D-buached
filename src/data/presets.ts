@@ -307,7 +307,7 @@ export function buildIcOptimizedScenario(): LabScenario {
 export const DEFAULT_SCENARIOS: LabScenario[] = [
   {
     id: 'scenario-baseline',
-    name: 'ผังฐาน: แบบ ER เก่า (ต้นฉบับ)',
+    name: 'แผนผัง LAB ต้นฉบับ',
     subtitle: 'ผังห้องแลปกลาง 12 โซน ปรับพื้นที่กระชับตามขนาดห้องจริงและเอาแถวตู้กลางออก',
     isBuiltIn: true,
     labWidth: 23.7,
