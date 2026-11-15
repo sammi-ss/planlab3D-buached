@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { User } from 'firebase/auth';
 import { BottomDock } from './components/BottomDock';
@@ -21,6 +21,11 @@ import {
   subscribeToUserScenarios,
   testFirestoreConnection,
 } from './services/firebase';
+import {
+  areScenarioContentsEqual,
+  createInitialHistoryState,
+  scenarioHistoryReducer,
+} from './state/scenarioHistoryReducer';
 import type {
   CameraPreset,
   EditorTool,
@@ -34,113 +39,27 @@ import {
   computeFlowAnalysis,
   evaluateCompliance,
 } from './utils/labAnalysis';
-
-const STORAGE_KEY = 'central_lab_digital_twin_v22';
-const PREV_STORAGE_KEYS = ['central_lab_digital_twin_v21', 'central_lab_digital_twin_v20', 'central_lab_digital_twin_v19', 'central_lab_digital_twin_v18', 'central_lab_digital_twin_v17', 'central_lab_digital_twin_v16', 'central_lab_digital_twin_v15', 'central_lab_digital_twin_v14', 'central_lab_digital_twin_v13', 'central_lab_digital_twin_v12', 'central_lab_digital_twin_v11', 'central_lab_digital_twin_v10', 'central_lab_digital_twin_v9', 'central_lab_digital_twin_v8', 'central_lab_digital_twin_v7', 'central_lab_digital_twin_v6', 'central_lab_digital_twin_v5', 'central_lab_digital_twin_v4', 'central_lab_digital_twin_v3', 'central_lab_digital_twin_v2', 'central_lab_digital_twin_v1'];
-
-interface PersistedStore {
-  scenarios: LabScenario[];
-  activeScenarioId: string;
-  compareScenarioId: string;
-}
-
-function loadInitialStore(): PersistedStore {
-  try {
-    const raw =
-      localStorage.getItem(STORAGE_KEY) ||
-      PREV_STORAGE_KEYS.map((k) => localStorage.getItem(k)).find(Boolean) ||
-      null;
-    if (raw) {
-      const parsed = JSON.parse(raw) as PersistedStore;
-      if (Array.isArray(parsed.scenarios) && parsed.scenarios.length > 0) {
-        const defaultEquipMap = new Map(
-          DEFAULT_SCENARIOS[0].equipment.map((item) => [item.id, item]),
-        );
-        // Keep user-created custom scenarios while refreshing built-in presets and syncing updated baseline shapes
-        const customScenarios = parsed.scenarios
-          .filter((s) => !s.isBuiltIn)
-          .map((s) => {
-            let migratedEquip = s.equipment.map((eq) => {
-              if (
-                (eq.id === 'eq-cl-cab1' || eq.id === 'eq-cl-cab2' || eq.id === 'eq-cl-cab3') &&
-                (eq.type === 'cabinet' || eq.rotationDeg === 0)
-              ) {
-                return { ...eq, type: 'docCabinet' as const, rotationDeg: 180 };
-              }
-              if (eq.id === 'eq-ra-sh' && (eq.width > 0.65 || eq.depth > 1.4)) {
-                const def = defaultEquipMap.get('eq-ra-sh');
-                if (def) return { ...eq, width: def.width, depth: def.depth, height: def.height };
-              }
-              if (eq.id === 'eq-he-line' && (eq.width > 1.0 || eq.depth > 1.0)) {
-                const def = defaultEquipMap.get('eq-he-line');
-                if (def) return { ...def };
-              }
-              if (eq.id === 'eq-st-fr') {
-                const def = defaultEquipMap.get('eq-st-fr1');
-                if (def) return { ...def };
-              }
-              if (eq.id === 'eq-st-fr1' || eq.id === 'eq-st-fr2') {
-                const def = defaultEquipMap.get(eq.id);
-                return {
-                  ...eq,
-                  type: 'doubleGlassFridge' as const,
-                  rotationDeg: 180,
-                  notes: def?.notes ?? eq.notes,
-                };
-              }
-              if (eq.id === 'eq-st-cab' && eq.type === 'cabinet') {
-                const def = defaultEquipMap.get('eq-st-cab');
-                return {
-                  ...eq,
-                  type: 'shelf' as const,
-                  label: def?.label ?? 'Dry Supply Shelf',
-                  labelTh: def?.labelTh ?? 'ชั้นวางวัสดุปลอดเชื้อ',
-                  height: def?.height ?? 1.3,
-                  notes: def?.notes ?? eq.notes,
-                };
-              }
-              return eq;
-            });
-            const hasHemoBench = migratedEquip.some((eq) => eq.id === 'eq-he-bench');
-            const defHemoBench = defaultEquipMap.get('eq-he-bench');
-            if (!hasHemoBench && defHemoBench) {
-              migratedEquip.push({ ...defHemoBench });
-            }
-            const hasFridge2 = migratedEquip.some((eq) => eq.id === 'eq-st-fr2');
-            const defFridge2 = defaultEquipMap.get('eq-st-fr2');
-            if (!hasFridge2 && defFridge2) {
-              migratedEquip.push({ ...defFridge2 });
-            }
-            return { ...s, equipment: migratedEquip };
-          });
-        const merged = [...DEFAULT_SCENARIOS, ...customScenarios];
-        const activeValid = merged.some((s) => s.id === parsed.activeScenarioId);
-        const compareValid = merged.some((s) => s.id === parsed.compareScenarioId);
-        return {
-          scenarios: merged,
-          activeScenarioId: activeValid ? parsed.activeScenarioId : DEFAULT_SCENARIOS[0].id,
-          compareScenarioId: compareValid ? parsed.compareScenarioId : DEFAULT_SCENARIOS[1].id,
-        };
-      }
-    }
-  } catch {
-    // fallback to defaults
-  }
-  return {
-    scenarios: DEFAULT_SCENARIOS,
-    activeScenarioId: DEFAULT_SCENARIOS[0].id,
-    compareScenarioId: DEFAULT_SCENARIOS[1].id,
-  };
-}
+import {
+  clearStoredData,
+  CURRENT_SCHEMA_VERSION,
+  loadInitialStore,
+  migrateImportedJson,
+  saveStoreToStorage,
+} from './utils/migration';
 
 export default function App() {
   const initial = useMemo(() => loadInitialStore(), []);
-  const [scenarios, setScenarios] = useState<LabScenario[]>(initial.scenarios);
+  const [historyState, dispatchHistory] = useReducer(
+    scenarioHistoryReducer,
+    initial.scenarios,
+    createInitialHistoryState,
+  );
+  const scenarios = historyState.present;
+  const canUndo = historyState.past.length > 0;
+  const canRedo = historyState.future.length > 0;
+
   const [activeScenarioId, setActiveScenarioId] = useState<string>(initial.activeScenarioId);
   const [compareScenarioId, setCompareScenarioId] = useState<string>(initial.compareScenarioId);
-
-  const [undoStack, setUndoStack] = useState<LabScenario[][]>([]);
-  const [redoStack, setRedoStack] = useState<LabScenario[][]>([]);
 
   const [isDark, setIsDark] = useState<boolean>(false);
   const [tool, setTool] = useState<EditorTool>('inspect');
@@ -202,12 +121,15 @@ export default function App() {
       (cloudScenarios) => {
         setCloudSyncing(false);
         if (cloudScenarios.length > 0) {
-          setScenarios((prev) => {
-            const cloudIds = new Set(cloudScenarios.map((s) => s.id));
-            const remainingLocal = prev.filter(
-              (s) => !s.isBuiltIn && !cloudIds.has(s.id),
-            );
-            return [...DEFAULT_SCENARIOS, ...cloudScenarios, ...remainingLocal];
+          dispatchHistory({
+            type: 'SET_PRESENT_NO_HISTORY',
+            updater: (prev) => {
+              const cloudIds = new Set(cloudScenarios.map((s) => s.id));
+              const remainingLocal = prev.filter(
+                (s) => !s.isBuiltIn && !cloudIds.has(s.id),
+              );
+              return [...DEFAULT_SCENARIOS, ...cloudScenarios, ...remainingLocal];
+            },
           });
         }
       },
@@ -219,18 +141,26 @@ export default function App() {
     return () => unsubScenarios();
   }, [currentUser]);
 
-  // Auto-save to localStorage
+  // Keep active/compare IDs valid when scenarios change (e.g. after undo/delete/import)
   useEffect(() => {
-    try {
-      const payload: PersistedStore = {
-        scenarios,
-        activeScenarioId,
-        compareScenarioId,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // ignore quota errors
+    if (!scenarios.some((s) => s.id === activeScenarioId)) {
+      setActiveScenarioId(scenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id);
     }
+    if (!scenarios.some((s) => s.id === compareScenarioId)) {
+      setCompareScenarioId(
+        scenarios[1]?.id ?? scenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id,
+      );
+    }
+  }, [scenarios, activeScenarioId, compareScenarioId]);
+
+  // Auto-save to localStorage with schemaVersion
+  useEffect(() => {
+    saveStoreToStorage({
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      scenarios,
+      activeScenarioId,
+      compareScenarioId,
+    });
   }, [scenarios, activeScenarioId, compareScenarioId]);
 
   const activeScenario = useMemo(
@@ -263,48 +193,72 @@ export default function App() {
     [compareScenario],
   );
 
-  // Mutation helper with Undo/Redo snapshot
+  // Mutation helper via single Undo/Redo reducer
   const mutateScenarios = useCallback(
-    (updater: (prev: LabScenario[]) => LabScenario[]) => {
-      setScenarios((prev) => {
-        setUndoStack((u) => [...u.slice(-24), prev]);
-        setRedoStack([]);
-        return updater(prev);
+    (
+      updater: (prev: LabScenario[]) => LabScenario[],
+      options?: { coalesceKey?: string; timestamp?: number },
+    ) => {
+      dispatchHistory({
+        type: 'COMMIT',
+        updater,
+        coalesceKey: options?.coalesceKey,
+        timestamp: options?.timestamp,
       });
     },
     [],
   );
 
   const updateActiveScenario = useCallback(
-    (updater: (sc: LabScenario) => LabScenario) => {
-      mutateScenarios((prev) =>
-        prev.map((s) =>
-          s.id === activeScenario.id
-            ? { ...updater(s), updatedAt: new Date().toISOString() }
-            : s,
-        ),
+    (
+      updater: (sc: LabScenario) => LabScenario,
+      options?: { coalesceKey?: string; timestamp?: number },
+    ) => {
+      const candidate = updater(activeScenario);
+      if (areScenarioContentsEqual(activeScenario, candidate)) {
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      if (activeScenario.isBuiltIn) {
+        const copyId = `scenario-copy-${Date.now()}`;
+        const copy: LabScenario = {
+          ...JSON.parse(JSON.stringify(candidate)),
+          id: copyId,
+          name: `${activeScenario.name} (สำเนา)`,
+          isBuiltIn: false,
+          updatedAt: nowIso,
+        };
+        mutateScenarios((prev) => [...prev, copy], options);
+        setCompareScenarioId(activeScenario.id);
+        setActiveScenarioId(copyId);
+        showNotice(`สร้างสำเนา "${copy.name}" อัตโนมัติเพื่อไม่ให้ทับผังต้นฉบับ`);
+        return;
+      }
+
+      const nextScenario: LabScenario = {
+        ...candidate,
+        updatedAt: nowIso,
+      };
+      mutateScenarios(
+        (prev) => prev.map((s) => (s.id === activeScenario.id ? nextScenario : s)),
+        options,
       );
     },
-    [activeScenario.id, mutateScenarios],
+    [activeScenario, mutateScenarios, showNotice],
   );
 
   const handleUndo = useCallback(() => {
-    if (undoStack.length === 0) return;
-    const prevSnapshot = undoStack[undoStack.length - 1];
-    setUndoStack((u) => u.slice(0, -1));
-    setRedoStack((r) => [...r, scenarios]);
-    setScenarios(prevSnapshot);
+    if (!canUndo) return;
+    dispatchHistory({ type: 'UNDO' });
     showNotice('ย้อนกลับการแก้ไขล่าสุดแล้ว');
-  }, [undoStack, scenarios, showNotice]);
+  }, [canUndo, showNotice]);
 
   const handleRedo = useCallback(() => {
-    if (redoStack.length === 0) return;
-    const nextSnapshot = redoStack[redoStack.length - 1];
-    setRedoStack((r) => r.slice(0, -1));
-    setUndoStack((u) => [...u, scenarios]);
-    setScenarios(nextSnapshot);
+    if (!canRedo) return;
+    dispatchHistory({ type: 'REDO' });
     showNotice('ทำซ้ำการแก้ไขแล้ว');
-  }, [redoStack, scenarios, showNotice]);
+  }, [canRedo, showNotice]);
 
   const handleSelectEntity = useCallback((sel: SelectionState | null) => {
     setSelection(sel);
@@ -351,11 +305,19 @@ export default function App() {
   );
 
   const handleUpdateEquipment = useCallback(
-    (id: string, patch: Partial<LabEquipment>) => {
-      updateActiveScenario((sc) => ({
-        ...sc,
-        equipment: sc.equipment.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-      }));
+    (id: string, patch: Partial<LabEquipment>, coalesceKey?: string) => {
+      const autoKey =
+        coalesceKey ??
+        ('labelTh' in patch || 'label' in patch
+          ? `edit:${id}:${Object.keys(patch).sort().join(',')}`
+          : undefined);
+      updateActiveScenario(
+        (sc) => ({
+          ...sc,
+          equipment: sc.equipment.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+        }),
+        autoKey ? { coalesceKey: autoKey, timestamp: Date.now() } : undefined,
+      );
     },
     [updateActiveScenario],
   );
@@ -423,14 +385,12 @@ export default function App() {
     showNotice('สร้างสำเนาผังใหม่เรียบร้อยแล้ว');
   }, [activeScenario, mutateScenarios, showNotice]);
 
-  const handleRenameScenario = useCallback(
-    (id: string, name: string) => {
-      setScenarios((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, name } : s)),
-      );
-    },
-    [],
-  );
+  const handleRenameScenario = useCallback((id: string, name: string) => {
+    dispatchHistory({
+      type: 'SET_PRESENT_NO_HISTORY',
+      updater: (prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)),
+    });
+  }, []);
 
   const handleDeleteScenario = useCallback(
     async (id: string) => {
@@ -438,7 +398,10 @@ export default function App() {
       const target = scenarios.find((s) => s.id === id);
       if (target?.isBuiltIn) return;
       const remaining = scenarios.filter((s) => s.id !== id);
-      setScenarios(remaining);
+      dispatchHistory({
+        type: 'SET_PRESENT_NO_HISTORY',
+        updater: (prev) => prev.filter((s) => s.id !== id),
+      });
       if (activeScenarioId === id) {
         setActiveScenarioId(remaining[0].id);
       }
@@ -501,7 +464,10 @@ export default function App() {
           isBuiltIn: false,
           updatedAt: new Date().toISOString(),
         };
-        setScenarios((prev) => [...prev, scenarioToSave]);
+        dispatchHistory({
+          type: 'SET_PRESENT_NO_HISTORY',
+          updater: (prev) => [...prev, scenarioToSave],
+        });
         setActiveScenarioId(newId);
       }
       await saveScenarioToFirebase(scenarioToSave, targetUser);
@@ -516,6 +482,7 @@ export default function App() {
 
   const handleExportJson = useCallback(() => {
     const payload = {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       exportedAt: new Date().toISOString(),
       activeScenarioId,
       scenarios,
@@ -536,30 +503,36 @@ export default function App() {
     async (file: File) => {
       try {
         const text = await file.text();
-        const data = JSON.parse(text);
-        if (Array.isArray(data.scenarios) && data.scenarios.length > 0) {
-          mutateScenarios(() => data.scenarios);
-          setActiveScenarioId(data.activeScenarioId || data.scenarios[0].id);
-          setCompareScenarioId(data.scenarios[1]?.id || data.scenarios[0].id);
-          setSelection(null);
-          showNotice(`นำเข้า ${data.scenarios.length} ทางเลือกผังสำเร็จ`);
-        } else if (data.zones && data.equipment) {
-          const imported: LabScenario = {
-            ...data,
-            id: `scenario-imp-${Date.now()}`,
-            isBuiltIn: false,
-          };
-          mutateScenarios((prev) => [...prev, imported]);
-          setActiveScenarioId(imported.id);
-          showNotice(`นำเข้าผัง "${imported.name}" สำเร็จ`);
-        } else {
+        const data: unknown = JSON.parse(text);
+        const migrated = migrateImportedJson(data);
+        if (!migrated) {
           showNotice('รูปแบบไฟล์ JSON ไม่ถูกต้อง');
+          return;
+        }
+
+        if (migrated.importedSingleName) {
+          const importedCustom = migrated.store.scenarios.filter((s) => !s.isBuiltIn);
+          const existingCustom = scenarios.filter((s) => !s.isBuiltIn);
+          const combined = [...DEFAULT_SCENARIOS, ...existingCustom, ...importedCustom];
+          const importedScenario = importedCustom[0];
+          dispatchHistory({ type: 'REPLACE_ALL', scenarios: combined });
+          if (importedScenario) {
+            setActiveScenarioId(importedScenario.id);
+          }
+          setSelection(null);
+          showNotice(`นำเข้าผัง "${migrated.importedSingleName}" สำเร็จ`);
+        } else {
+          dispatchHistory({ type: 'REPLACE_ALL', scenarios: migrated.store.scenarios });
+          setActiveScenarioId(migrated.store.activeScenarioId);
+          setCompareScenarioId(migrated.store.compareScenarioId);
+          setSelection(null);
+          showNotice(`นำเข้า ${migrated.importedCount} ทางเลือกผังสำเร็จ`);
         }
       } catch {
         showNotice('ไม่สามารถอ่านไฟล์ JSON ได้');
       }
     },
-    [mutateScenarios, showNotice],
+    [scenarios, showNotice],
   );
 
   const handleExportPng = useCallback(() => {
@@ -576,12 +549,10 @@ export default function App() {
   }, [showNotice]);
 
   const handleResetAll = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setScenarios(DEFAULT_SCENARIOS);
+    clearStoredData();
+    dispatchHistory({ type: 'REPLACE_ALL', scenarios: DEFAULT_SCENARIOS });
     setActiveScenarioId(DEFAULT_SCENARIOS[0].id);
     setCompareScenarioId(DEFAULT_SCENARIOS[1].id);
-    setUndoStack([]);
-    setRedoStack([]);
     setSelection(null);
     showNotice('รีเซ็ตกลับเป็นผังตั้งต้นแล้ว');
   }, [showNotice]);
@@ -589,7 +560,15 @@ export default function App() {
   const handleResetCurrentScenario = useCallback(() => {
     const pristine =
       DEFAULT_SCENARIOS.find((s) => s.id === activeScenario.id) ?? DEFAULT_SCENARIOS[0];
-    updateActiveScenario(() => JSON.parse(JSON.stringify(pristine)));
+    updateActiveScenario((sc) => ({
+      ...sc,
+      labWidth: pristine.labWidth,
+      labDepth: pristine.labDepth,
+      zones: JSON.parse(JSON.stringify(pristine.zones)),
+      equipment: JSON.parse(JSON.stringify(pristine.equipment)),
+      walls: JSON.parse(JSON.stringify(pristine.walls)),
+      openings: JSON.parse(JSON.stringify(pristine.openings)),
+    }));
     showNotice(`คืนค่าผัง "${activeScenario.name}" เป็นค่าเริ่มต้นแล้ว`);
   }, [activeScenario.id, activeScenario.name, updateActiveScenario, showNotice]);
 
@@ -624,7 +603,7 @@ export default function App() {
       const maxZ = activeScenario.labDepth / 2 - halfD;
       const nx = Number(THREE.MathUtils.clamp(eq.x + dx, -maxX, maxX).toFixed(2));
       const nz = Number(THREE.MathUtils.clamp(eq.z + dz, -maxZ, maxZ).toFixed(2));
-      handleUpdateEquipment(eq.id, { x: nx, z: nz });
+      handleUpdateEquipment(eq.id, { x: nx, z: nz }, `nudge:${eq.id}`);
     },
     [selection, activeScenario, handleUpdateEquipment],
   );
@@ -689,8 +668,8 @@ export default function App() {
           scenarios={scenarios}
           activeScenarioId={activeScenario.id}
           isDark={isDark}
-          canUndo={undoStack.length > 0}
-          canRedo={redoStack.length > 0}
+          canUndo={canUndo}
+          canRedo={canRedo}
           activeDrawerTab={drawerTab}
           complianceSummary={{
             passed: activeMetrics.passedRules,

@@ -79,7 +79,7 @@ export function TopBar({
       {/* Zone 1: Brand Title */}
       <div className="flex min-w-0 items-center gap-2 shrink-0">
         <span className="hidden sm:inline truncate text-base font-semibold tracking-tight whitespace-nowrap">
-          แบบห้องแลปกลาง · ER เก่า
+          แผนผังห้องปฏิบัติการการแพทย์
         </span>
         <span className="sm:hidden truncate text-sm font-semibold tracking-tight whitespace-nowrap">
           แลปกลาง ER
