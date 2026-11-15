@@ -178,7 +178,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(propsRef.current.isDark ? 0x101715 : 0xf1f4f3);
-      scene.fog = new THREE.Fog(propsRef.current.isDark ? 0x101715 : 0xf1f4f3, 38, 85);
+      scene.fog = new THREE.Fog(propsRef.current.isDark ? 0x101715 : 0xf1f4f3, 65, 165);
 
       const pmrem = new THREE.PMREMGenerator(renderer);
       const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -189,7 +189,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         38,
         Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight),
         0.1,
-        200,
+        250,
       );
       camera.position.set(...CAMERA_PRESETS.iso.pos);
 
@@ -444,7 +444,9 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         updateNdc(e as unknown as PointerEvent);
         _raycaster.setFromCamera(_ndc, camera);
         const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
-        const hitRoot = getPrioritizedHit(hits, true, propsRef.current.selection);
+        const rawHit = getPrioritizedHit(hits, true, propsRef.current.selection);
+        const hitRoot =
+          rawHit && rawHit.userData.entityKind !== 'zone' ? rawHit : null;
         if (hitRoot) {
           const box = new THREE.Box3().setFromObject(hitRoot);
           const center = new THREE.Vector3();
@@ -1102,7 +1104,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       if (!ctx) return;
       const bgHex = props.isDark ? 0x101715 : 0xf1f4f3;
       ctx.scene.background = new THREE.Color(bgHex);
-      ctx.scene.fog = new THREE.Fog(bgHex, 38, 85);
+      ctx.scene.fog = new THREE.Fog(bgHex, 65, 165);
       ctx.requestRender();
     }, [props.isDark]);
 
