@@ -175,4 +175,54 @@ describe('placement utilities', () => {
     expect(resolveZoneId({ x: 0, z: 0 }, zones)).toBeNull();
     expect(resolveZoneId({ x: 2.5, z: 0 }, zones, { fallbackToNearest: true })).toBe('zone-b');
   });
+
+  it('correctly detects elevated equipment resting on top of a table/bench', () => {
+    const table = makeEquip({
+      id: 'table-1',
+      x: 1,
+      z: 2,
+      width: 2.0,
+      depth: 1.0,
+      height: 0.55,
+      baseY: 0,
+      rotationDeg: 0,
+    });
+    const childOnTable = makeEquip({
+      id: 'analyzer-1',
+      x: 1.2,
+      z: 2.1,
+      width: 0.6,
+      depth: 0.5,
+      height: 0.4,
+      baseY: 0.55,
+    });
+    const itemOnFloor = makeEquip({
+      id: 'floor-cart',
+      x: 1.0,
+      z: 2.0,
+      width: 0.6,
+      depth: 0.5,
+      height: 0.8,
+      baseY: 0,
+    });
+
+    const tableAabb = {
+      minX: table.x - table.width / 2,
+      maxX: table.x + table.width / 2,
+      minZ: table.z - table.depth / 2,
+      maxZ: table.z + table.depth / 2,
+    };
+
+    const isChild = (eq: LabEquipment) =>
+      eq.id !== table.id &&
+      eq.baseY > 0 &&
+      eq.x >= tableAabb.minX &&
+      eq.x <= tableAabb.maxX &&
+      eq.z >= tableAabb.minZ &&
+      eq.z <= tableAabb.maxZ &&
+      eq.baseY >= table.baseY + table.height * 0.7;
+
+    expect(isChild(childOnTable)).toBe(true);
+    expect(isChild(itemOnFloor)).toBe(false);
+  });
 });

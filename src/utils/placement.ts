@@ -235,3 +235,149 @@ export function resolveZoneId(
   }
   return nearest.id;
 }
+
+export function normalizeRotationDeg(deg: number): number {
+  const mod = ((deg % 360) + 360) % 360;
+  return Object.is(mod, -0) ? 0 : Number(mod.toFixed(4));
+}
+
+/**
+ * Rotate a 2D XZ offset `(dx, dz)` around +Y axis by `deltaDeg` degrees,
+ * matching Three.js `Object3D.rotation.y = degToRad(deltaDeg)`.
+ */
+export function rotateOffsetAroundY(
+  dx: number,
+  dz: number,
+  deltaDeg: number,
+): { dx: number; dz: number } {
+  const rad = (deltaDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    dx: Number((dx * cos + dz * sin).toFixed(4)),
+    dz: Number((-dx * sin + dz * cos).toFixed(4)),
+  };
+}
+
+/**
+ * Test if a 2D point `(px, pz)` lies inside an equipment item's rotated rectangle on the XZ plane.
+ */
+export function isPointInRotatedBox(
+  point: { x: number; z: number },
+  box: Pick<LabEquipment, 'x' | 'z' | 'width' | 'depth' | 'rotationDeg'>,
+  epsilon = 0.02,
+): boolean {
+  const rad = (-box.rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = point.x - box.x;
+  const dz = point.z - box.z;
+  // Rotate world delta into box-local coordinates
+  const lx = dx * cos + dz * sin;
+  const lz = -dx * sin + dz * cos;
+  return (
+    Math.abs(lx) <= box.width / 2 + epsilon &&
+    Math.abs(lz) <= box.depth / 2 + epsilon
+  );
+}
+
+/**
+ * Find the supporting surface item beneath an elevated point `{x, z}` (or matching baseY).
+ * When `targetBaseY` is specified (e.g. during v2->v3 migration), matches surfaces whose top `baseY + height`
+ * matches `targetBaseY` within `yTolerance`. When omitted (e.g. interactive drag-drop), matches benches
+ * or low flat surfaces whose top can support tabletop gear.
+ */
+export function findSupportingSurface(
+  point: { x: number; z: number },
+  equipment: readonly LabEquipment[],
+  options?: {
+    excludeIds?: Iterable<string>;
+    targetBaseY?: number;
+    yTolerance?: number;
+    eligibleTypes?: ReadonlySet<string>;
+  },
+): LabEquipment | null {
+  const excluded = new Set(options?.excludeIds ?? []);
+  const yTol = options?.yTolerance ?? 0.05;
+  let best: LabEquipment | null = null;
+  let bestDistSq = Infinity;
+
+  for (const candidate of equipment) {
+    if (excluded.has(candidate.id)) continue;
+    if (candidate.height <= 0) continue;
+    if (options?.eligibleTypes && !options.eligibleTypes.has(candidate.type)) {
+      continue;
+    }
+
+    const topY = candidate.baseY + candidate.height;
+    if (typeof options?.targetBaseY === 'number') {
+      if (Math.abs(topY - options.targetBaseY) > yTol) continue;
+    } else if (candidate.baseY !== 0) {
+      // Interactive support detection defaults to floor-standing surfaces unless targetBaseY specified
+      continue;
+    }
+
+    if (isPointInRotatedBox(point, candidate)) {
+      const dx = point.x - candidate.x;
+      const dz = point.z - candidate.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = candidate;
+      }
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Bind `supportId` for elevated items (`baseY > 0`) onto the supporting furniture underneath them.
+ * Optionally calls `onOrphan` when an item with `baseY > 0` has no supporting furniture underneath.
+ */
+export function bindSupportIds(
+  equipment: readonly LabEquipment[],
+  options?: {
+    preserveExisting?: boolean;
+    onOrphan?: (item: LabEquipment) => void;
+  },
+): LabEquipment[] {
+  const idSet = new Set(equipment.map((e) => e.id));
+
+  return equipment.map((item) => {
+    if (item.baseY <= 0) {
+      if (item.supportId !== undefined) {
+        const rest = { ...item };
+        delete rest.supportId;
+        return rest;
+      }
+      return item;
+    }
+
+    if (options?.preserveExisting && item.supportId && idSet.has(item.supportId)) {
+      return item;
+    }
+
+    const parent = findSupportingSurface(
+      { x: item.x, z: item.z },
+      equipment,
+      {
+        excludeIds: [item.id],
+        targetBaseY: item.baseY,
+        yTolerance: 0.06,
+      },
+    );
+
+    if (parent) {
+      return { ...item, supportId: parent.id };
+    }
+
+    options?.onOrphan?.(item);
+    if (item.supportId !== undefined) {
+      const rest = { ...item };
+      delete rest.supportId;
+      return rest;
+    }
+    return item;
+  });
+}

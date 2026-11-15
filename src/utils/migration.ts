@@ -1,5 +1,6 @@
 import { DEFAULT_SCENARIOS } from '../data/presets';
 import type { LabEquipment, LabScenario } from '../types/lab';
+import { bindSupportIds } from './placement';
 
 export const STORAGE_KEY = 'central_lab_digital_twin_v22';
 export const LEGACY_STORAGE_KEYS = [
@@ -26,7 +27,7 @@ export const LEGACY_STORAGE_KEYS = [
   'central_lab_digital_twin_v1',
 ];
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface PersistedStore {
   schemaVersion: number;
@@ -230,6 +231,30 @@ function migrateV1ToV2(draft: StoreDraft): PersistedStore {
 }
 
 /**
+ * Step 2 -> 3:
+ * Populate `supportId` for elevated items (`baseY > 0`) by matching their center
+ * inside the rotated XZ footprint of a supporting surface underneath.
+ * Warns to console if an elevated item has no supporting furniture underneath (never crashes).
+ */
+function migrateV2ToV3(store: PersistedStore): PersistedStore {
+  return {
+    ...store,
+    schemaVersion: 3,
+    scenarios: store.scenarios.map((sc) => ({
+      ...sc,
+      equipment: bindSupportIds(sc.equipment, {
+        preserveExisting: true,
+        onOrphan: (item) => {
+          console.warn(
+            `[migrate v2->v3] Equipment "${item.id}" (${item.label}) in scenario "${sc.id}" has baseY=${item.baseY} without a supporting surface underneath.`,
+          );
+        },
+      }),
+    })),
+  };
+}
+
+/**
  * Pure version-by-version schema migration function.
  * Accepts parsed JSON from localStorage (v1..v22+) or exported JSON files (any version).
  */
@@ -266,13 +291,18 @@ export function migrate(raw: unknown): PersistedStore {
     version = 1;
   }
 
-  if (version < 2) {
-    const v2 = migrateV1ToV2(draft);
-    return v2;
+  // Always refresh built-in scenarios from code & validate active/compare IDs
+  let store = migrateV1ToV2(draft);
+
+  if (version < 3) {
+    store = migrateV2ToV3(store);
+    version = 3;
   }
 
-  // Already at CURRENT_SCHEMA_VERSION (or higher): ensure built-in scenarios stay fresh from code
-  return migrateV1ToV2(draft);
+  return {
+    ...store,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+  };
 }
 
 /**

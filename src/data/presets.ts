@@ -6,6 +6,7 @@ import type {
   LabWall,
   LabZone,
 } from '../types/lab';
+import { bindSupportIds } from '../utils/placement';
 
 const U = 40;
 const CX = 500;
@@ -262,7 +263,7 @@ const BASELINE_OPENINGS: LabOpening[] = [
 function cloneScenarioData(): Pick<LabScenario, 'zones' | 'equipment' | 'walls' | 'openings'> {
   return {
     zones: BASELINE_ZONES.map((z) => ({ ...z })),
-    equipment: BASELINE_EQUIPMENT.map((e) => ({ ...e })),
+    equipment: bindSupportIds(BASELINE_EQUIPMENT.map((e) => ({ ...e }))),
     walls: BASELINE_WALLS.map((w) => ({ ...w })),
     openings: BASELINE_OPENINGS.map((o) => ({ ...o })),
   };

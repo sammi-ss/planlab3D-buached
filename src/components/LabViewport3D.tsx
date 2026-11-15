@@ -23,6 +23,14 @@ import type {
   FlowType,
   LabScenario,
 } from '../types/lab';
+import {
+  clampToRoom,
+  findOverlaps,
+  getFootprint,
+  getItemAABB,
+  snapToGrid,
+  type SpatialBoxInput,
+} from '../utils/placement';
 
 export interface LabViewportHandle {
   capturePng: () => string | null;
@@ -50,7 +58,14 @@ interface LabViewport3DProps {
   onSelect: (sel: SelectionState | null) => void;
   onUserOrbitStart: () => void;
   onLiveDragCoords: (info: { label: string } | null) => void;
-  onCommitMove: (kind: 'equipment' | 'zone' | 'opening', id: string, x: number, z: number) => void;
+  onCommitMove: (
+    kind: 'equipment' | 'zone' | 'opening',
+    id: string,
+    x: number,
+    z: number,
+    rotationDeg?: number,
+  ) => void;
+  onNotice?: (msg: string) => void;
 }
 
 const CAMERA_PRESETS: Record<
@@ -83,10 +98,6 @@ function detectSoftwareWebGL(): boolean {
   }
 }
 
-function snapValue(val: number, step = 0.1): number {
-  return Number((Math.round(val / step) * step).toFixed(2));
-}
-
 export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
   function LabViewport3D(props, ref) {
     const mountRef = useRef<HTMLDivElement | null>(null);
@@ -108,6 +119,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       selectionHelper: THREE.Box3Helper;
       hoverHelper: THREE.Box3Helper;
       simsFootprint: THREE.Group;
+      setFootprintColor: (isColliding: boolean) => void;
       clickableRoots: THREE.Object3D[];
       entityMap: Map<string, THREE.Object3D>;
       flowAnimItems: { mesh: THREE.Mesh; curve: THREE.CatmullRomCurve3; offset: number; speed: number }[];
@@ -221,36 +233,51 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       hoverHelper.visible = false;
       scene.add(hoverHelper);
 
-      // Sims 3D Green Tile Footprint Helper
+      // Sims 3D Green/Red Tile Footprint Helper
       const simsFootprint = new THREE.Group();
       simsFootprint.visible = false;
+      const footprintPlaneMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        transparent: true,
+        opacity: 0.38,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
       const footprintPlane = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({
-          color: 0x10b981,
-          transparent: true,
-          opacity: 0.38,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        }),
+        footprintPlaneMat,
       );
       footprintPlane.rotation.x = -Math.PI / 2;
 
+      const footprintBorderMat = new THREE.LineBasicMaterial({ color: 0x047857 });
       const footprintBorder = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
-        new THREE.LineBasicMaterial({ color: 0x047857 }),
+        footprintBorderMat,
       );
       footprintBorder.rotation.x = -Math.PI / 2;
 
+      const footprintArrowMat = new THREE.MeshBasicMaterial({ color: 0x065f46 });
       const footprintArrow = new THREE.Mesh(
         new THREE.ConeGeometry(0.12, 0.28, 3),
-        new THREE.MeshBasicMaterial({ color: 0x065f46 }),
+        footprintArrowMat,
       );
       footprintArrow.rotation.x = Math.PI / 2;
       footprintArrow.position.set(0, 0.015, -0.4);
 
       simsFootprint.add(footprintPlane, footprintBorder, footprintArrow);
       scene.add(simsFootprint);
+
+      const setFootprintColor = (isColliding: boolean) => {
+        if (isColliding) {
+          footprintPlaneMat.color.setHex(0xef4444);
+          footprintBorderMat.color.setHex(0xb91c1c);
+          footprintArrowMat.color.setHex(0x991b1b);
+        } else {
+          footprintPlaneMat.color.setHex(0x10b981);
+          footprintBorderMat.color.setHex(0x047857);
+          footprintArrowMat.color.setHex(0x065f46);
+        }
+      };
 
       const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
@@ -294,6 +321,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         selectionHelper,
         hoverHelper,
         simsFootprint,
+        setFootprintColor,
         clickableRoots: [] as THREE.Object3D[],
         entityMap: new Map<string, THREE.Object3D>(),
         flowAnimItems: [] as {
@@ -407,17 +435,35 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       renderer.domElement.addEventListener('webglcontextlost', onContextLost);
       renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
 
-      // Pointer interaction: Hover, Click Select, Drag-Move, and Laser Measure
+      // Pointer interaction: Hover, Click Select, Drag-Move, and Precision Placement
       let downPos: { x: number; y: number } | null = null;
+      let hasDragged = false;
+      let currentPointerId: number | null = null;
       let dragTarget: {
         kind: 'equipment' | 'zone' | 'opening';
         id: string;
         obj: THREE.Object3D;
+        initialX: number;
+        initialZ: number;
+        initialRotDeg: number;
         offsetX: number;
         offsetZ: number;
         halfW: number;
         halfD: number;
+        baseWidth: number;
+        baseDepth: number;
+        height: number;
+        baseY: number;
+        rotationDeg: number;
         label: string;
+        isColliding: boolean;
+        childObjs: {
+          id: string;
+          obj: THREE.Object3D;
+          sprite?: THREE.Sprite;
+          initialX: number;
+          initialZ: number;
+        }[];
       } | null = null;
       let lastHoverCheck = 0;
 
@@ -436,36 +482,255 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         return null;
       };
 
+      // Task 1: Picking priority equipment > opening > zone (zone draggable only if already selected)
+      const getPrioritizedHit = (
+        hits: THREE.Intersection[],
+        allowUnselectedZone: boolean,
+        currentSelection: SelectionState | null,
+      ): THREE.Object3D | null => {
+        let eqRoot: THREE.Object3D | null = null;
+        let opRoot: THREE.Object3D | null = null;
+        let znRoot: THREE.Object3D | null = null;
+
+        for (const hit of hits) {
+          const root = findEntityRoot(hit.object);
+          if (!root) continue;
+          const kind = root.userData.entityKind;
+          if (kind === 'equipment' && !eqRoot) {
+            eqRoot = root;
+            break;
+          } else if (kind === 'opening' && !opRoot) {
+            opRoot = root;
+          } else if (kind === 'zone' && !znRoot) {
+            znRoot = root;
+          }
+        }
+
+        if (eqRoot) return eqRoot;
+        if (opRoot) return opRoot;
+        if (znRoot) {
+          if (allowUnselectedZone) return znRoot;
+          if (
+            currentSelection?.kind === 'zone' &&
+            currentSelection.id === znRoot.userData.entityId
+          ) {
+            return znRoot;
+          }
+        }
+        return null;
+      };
+
+      // Task 4: cancelDrag reverts positions, restores controls & cleans up
+      const cancelDrag = () => {
+        if (!dragTarget) return;
+        controls.enabled = true;
+        dragTarget.obj.position.x = dragTarget.initialX;
+        dragTarget.obj.position.z = dragTarget.initialZ;
+        if (dragTarget.kind === 'equipment') {
+          dragTarget.obj.rotation.y = THREE.MathUtils.degToRad(dragTarget.initialRotDeg);
+          dragTarget.rotationDeg = dragTarget.initialRotDeg;
+        }
+        const attachedSprite = dragTarget.obj.userData?.labelSprite as THREE.Sprite | undefined;
+        if (attachedSprite) {
+          attachedSprite.position.x = dragTarget.initialX;
+          attachedSprite.position.z = dragTarget.initialZ;
+        }
+        for (const child of dragTarget.childObjs) {
+          child.obj.position.x = child.initialX;
+          child.obj.position.z = child.initialZ;
+          if (child.sprite) {
+            child.sprite.position.x = child.initialX;
+            child.sprite.position.z = child.initialZ;
+          }
+        }
+        ctxObj.setFootprintColor(false);
+        ctxObj.simsFootprint.visible = false;
+        ctxObj.selectionHelper.visible = false;
+        propsRef.current.onLiveDragCoords(null);
+        if (currentPointerId !== null) {
+          try {
+            renderer.domElement.releasePointerCapture(currentPointerId);
+          } catch {
+            // ignore
+          }
+        }
+        dragTarget = null;
+        downPos = null;
+        hasDragged = false;
+        currentPointerId = null;
+        requestRender();
+      };
+
+      // Task 7: R key rotates held item 90° and immediately recomputes footprint & collision
+      const handleRotateHeld = () => {
+        if (!dragTarget || dragTarget.kind !== 'equipment') return;
+        dragTarget.rotationDeg = (dragTarget.rotationDeg + 90) % 360;
+        dragTarget.obj.rotation.y = THREE.MathUtils.degToRad(dragTarget.rotationDeg);
+
+        const fp = getFootprint({
+          width: dragTarget.baseWidth,
+          depth: dragTarget.baseDepth,
+          rotationDeg: dragTarget.rotationDeg,
+        });
+        dragTarget.halfW = fp.halfW;
+        dragTarget.halfD = fp.halfD;
+
+        const sc = propsRef.current.scenario;
+        const clamped = clampToRoom(
+          { x: dragTarget.obj.position.x, z: dragTarget.obj.position.z },
+          fp,
+          sc.labWidth,
+          sc.labDepth,
+        );
+        const nx = Number(clamped.x.toFixed(2));
+        const nz = Number(clamped.z.toFixed(2));
+        dragTarget.obj.position.x = nx;
+        dragTarget.obj.position.z = nz;
+
+        const attachedSprite = dragTarget.obj.userData?.labelSprite as THREE.Sprite | undefined;
+        if (attachedSprite) {
+          attachedSprite.position.x = nx;
+          attachedSprite.position.z = nz;
+        }
+
+        const candidateItem: SpatialBoxInput = {
+          id: dragTarget.id,
+          x: nx,
+          z: nz,
+          width: dragTarget.baseWidth,
+          depth: dragTarget.baseDepth,
+          height: dragTarget.height,
+          baseY: dragTarget.baseY,
+          rotationDeg: dragTarget.rotationDeg,
+        };
+        const ignoreIds = new Set<string>([
+          dragTarget.id,
+          ...dragTarget.childObjs.map((c) => c.id),
+        ]);
+        const overlaps = findOverlaps(candidateItem, sc.equipment, ignoreIds);
+        const isColliding = overlaps.length > 0;
+        dragTarget.isColliding = isColliding;
+
+        ctxObj.setFootprintColor(isColliding);
+        ctxObj.simsFootprint.position.set(nx, 0.018, nz);
+        ctxObj.simsFootprint.rotation.y = THREE.MathUtils.degToRad(-dragTarget.rotationDeg);
+        ctxObj.simsFootprint.scale.set(dragTarget.baseWidth, 1, dragTarget.baseDepth);
+
+        propsRef.current.onLiveDragCoords({
+          label: dragTarget.isColliding ? `${dragTarget.label} (ชนครุภัณฑ์อื่น)` : dragTarget.label,
+        });
+        requestRender();
+      };
+
       const onPointerDown = (e: PointerEvent) => {
         if (e.button !== 0) return;
         downPos = { x: e.clientX, y: e.clientY };
+        hasDragged = false;
+        currentPointerId = e.pointerId;
         updateNdc(e);
         _raycaster.setFromCamera(_ndc, camera);
 
         const currentTool = propsRef.current.tool;
         if (currentTool === 'move') {
           const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
-          const hitRoot = hits.length > 0 ? findEntityRoot(hits[0].object) : null;
+          // Task 1: equipment > opening > zone (zone draggable only if already selected)
+          const hitRoot = getPrioritizedHit(hits, false, propsRef.current.selection);
           if (hitRoot && _raycaster.ray.intersectPlane(_groundPlane, _intersectPt)) {
+            const sc = propsRef.current.scenario;
             const kind = hitRoot.userData.entityKind as 'equipment' | 'zone' | 'opening';
             const id = hitRoot.userData.entityId as string;
-            const halfW = (hitRoot.userData.halfW as number) ?? 0.5;
-            const halfD = (hitRoot.userData.halfD as number) ?? 0.5;
-            const label = (hitRoot.userData.label as string) ?? id;
+            const eqItem = kind === 'equipment' ? sc.equipment.find((item) => item.id === id) : null;
+            const znItem = kind === 'zone' ? sc.zones.find((z) => z.id === id) : null;
+            const opItem = kind === 'opening' ? sc.openings.find((o) => o.id === id) : null;
 
-            controls.enabled = false;
+            let halfW = 0.5;
+            let halfD = 0.5;
+            let baseWidth = 1;
+            let baseDepth = 1;
+            let height = 0.5;
+            let baseY = 0;
+            let rotationDeg = 0;
+            let label = (hitRoot.userData.label as string) ?? id;
+
+            if (eqItem) {
+              const fp = getFootprint(eqItem);
+              halfW = fp.halfW;
+              halfD = fp.halfD;
+              baseWidth = eqItem.width;
+              baseDepth = eqItem.depth;
+              height = eqItem.height;
+              baseY = eqItem.baseY;
+              rotationDeg = eqItem.rotationDeg;
+              label = eqItem.labelTh;
+            } else if (znItem) {
+              halfW = znItem.width / 2;
+              halfD = znItem.depth / 2;
+              baseWidth = znItem.width;
+              baseDepth = znItem.depth;
+              label = znItem.nameTh;
+            } else if (opItem) {
+              halfW = Math.max(0.2, opItem.width / 2);
+              halfD = Math.max(0.2, opItem.depth / 2);
+              baseWidth = opItem.width;
+              baseDepth = opItem.depth;
+              label = opItem.labelTh;
+            }
+
+            // Task 9: find elevated machines sitting on top of this equipment
+            const childObjs: {
+              id: string;
+              obj: THREE.Object3D;
+              sprite?: THREE.Sprite;
+              initialX: number;
+              initialZ: number;
+            }[] = [];
+
+            if (eqItem) {
+              const parentAabb = getItemAABB(eqItem);
+              const machinesOnTop = sc.equipment.filter(
+                (other) =>
+                  other.id !== eqItem.id &&
+                  other.baseY > 0 &&
+                  other.x >= parentAabb.minX &&
+                  other.x <= parentAabb.maxX &&
+                  other.z >= parentAabb.minZ &&
+                  other.z <= parentAabb.maxZ &&
+                  other.baseY >= eqItem.baseY + eqItem.height * 0.7,
+              );
+              for (const m of machinesOnTop) {
+                const mObj = ctxObj.entityMap.get(`equipment:${m.id}`);
+                if (mObj) {
+                  childObjs.push({
+                    id: m.id,
+                    obj: mObj,
+                    sprite: mObj.userData?.labelSprite as THREE.Sprite | undefined,
+                    initialX: mObj.position.x,
+                    initialZ: mObj.position.z,
+                  });
+                }
+              }
+            }
+
             dragTarget = {
               kind,
               id,
               obj: hitRoot,
+              initialX: hitRoot.position.x,
+              initialZ: hitRoot.position.z,
+              initialRotDeg: rotationDeg,
               offsetX: hitRoot.position.x - _intersectPt.x,
               offsetZ: hitRoot.position.z - _intersectPt.z,
               halfW,
               halfD,
+              baseWidth,
+              baseDepth,
+              height,
+              baseY,
+              rotationDeg,
               label,
+              isColliding: false,
+              childObjs,
             };
-            propsRef.current.onSelect({ kind, id });
-            renderer.domElement.setPointerCapture(e.pointerId);
           }
         }
       };
@@ -473,14 +738,43 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       const onPointerMove = (e: PointerEvent) => {
         updateNdc(e);
 
-        if (dragTarget) {
+        if (dragTarget && downPos) {
+          const pointerDist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+          // Task 3: must move > 5px to be considered a drag
+          if (!hasDragged) {
+            if (pointerDist > 5) {
+              hasDragged = true;
+              controls.enabled = false;
+              propsRef.current.onSelect({ kind: dragTarget.kind, id: dragTarget.id });
+              try {
+                renderer.domElement.setPointerCapture(e.pointerId);
+              } catch {
+                // ignore
+              }
+            } else {
+              return;
+            }
+          }
+
           _raycaster.setFromCamera(_ndc, camera);
           if (_raycaster.ray.intersectPlane(_groundPlane, _intersectPt)) {
             const sc = propsRef.current.scenario;
-            const maxX = sc.labWidth / 2 - dragTarget.halfW;
-            const maxZ = sc.labDepth / 2 - dragTarget.halfD;
-            const nx = THREE.MathUtils.clamp(snapValue(_intersectPt.x + dragTarget.offsetX, 0.1), -maxX, maxX);
-            const nz = THREE.MathUtils.clamp(snapValue(_intersectPt.z + dragTarget.offsetZ, 0.1), -maxZ, maxZ);
+            const rawX = _intersectPt.x + dragTarget.offsetX;
+            const rawZ = _intersectPt.z + dragTarget.offsetZ;
+
+            // Task 6: single 0.1m snap grid, Alt key disables snap
+            const useSnap = !e.altKey;
+            const targetX = useSnap ? snapToGrid(rawX, 0.1) : rawX;
+            const targetZ = useSnap ? snapToGrid(rawZ, 0.1) : rawZ;
+
+            // Task 5: getFootprint + clampToRoom
+            const fp = { halfW: dragTarget.halfW, halfD: dragTarget.halfD };
+            const clamped = clampToRoom({ x: targetX, z: targetZ }, fp, sc.labWidth, sc.labDepth);
+            const nx = Number(clamped.x.toFixed(2));
+            const nz = Number(clamped.z.toFixed(2));
+
+            const dx = nx - dragTarget.initialX;
+            const dz = nz - dragTarget.initialZ;
 
             dragTarget.obj.position.x = nx;
             dragTarget.obj.position.z = nz;
@@ -489,12 +783,50 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
               attachedSprite.position.x = nx;
               attachedSprite.position.z = nz;
             }
+
+            // Task 9: Move machines on top of table
+            for (const child of dragTarget.childObjs) {
+              child.obj.position.x = Number((child.initialX + dx).toFixed(2));
+              child.obj.position.z = Number((child.initialZ + dz).toFixed(2));
+              if (child.sprite) {
+                child.sprite.position.x = child.obj.position.x;
+                child.sprite.position.z = child.obj.position.z;
+              }
+            }
+
             ctxObj.selectionHelper.box.setFromObject(dragTarget.obj);
             ctxObj.selectionHelper.visible = true;
+
+            // Task 8: findOverlaps collision check while dragging
+            let isColliding = false;
+            if (dragTarget.kind === 'equipment') {
+              const candidateItem: SpatialBoxInput = {
+                id: dragTarget.id,
+                x: nx,
+                z: nz,
+                width: dragTarget.baseWidth,
+                depth: dragTarget.baseDepth,
+                height: dragTarget.height,
+                baseY: dragTarget.baseY,
+                rotationDeg: dragTarget.rotationDeg,
+              };
+              const ignoreIds = new Set<string>([
+                dragTarget.id,
+                ...dragTarget.childObjs.map((c) => c.id),
+              ]);
+              const overlaps = findOverlaps(candidateItem, sc.equipment, ignoreIds);
+              isColliding = overlaps.length > 0;
+            }
+            dragTarget.isColliding = isColliding;
+
+            ctxObj.setFootprintColor(isColliding);
             ctxObj.simsFootprint.position.set(nx, 0.018, nz);
+            ctxObj.simsFootprint.rotation.y = THREE.MathUtils.degToRad(-dragTarget.rotationDeg);
+            ctxObj.simsFootprint.scale.set(dragTarget.baseWidth, 1, dragTarget.baseDepth);
             ctxObj.simsFootprint.visible = true;
+
             propsRef.current.onLiveDragCoords({
-              label: dragTarget.label,
+              label: dragTarget.isColliding ? `${dragTarget.label} (ชนครุภัณฑ์อื่น)` : dragTarget.label,
             });
             requestRender();
           }
@@ -508,11 +840,21 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
 
         _raycaster.setFromCamera(_ndc, camera);
         const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
-        const hitRoot = hits.length > 0 ? findEntityRoot(hits[0].object) : null;
+        const hitRoot = getPrioritizedHit(hits, propsRef.current.tool !== 'move', propsRef.current.selection);
         if (hitRoot) {
-          renderer.domElement.style.cursor = propsRef.current.tool === 'move' ? 'grab' : 'pointer';
+          const isZone = hitRoot.userData.entityKind === 'zone';
+          const isSelectedZone =
+            isZone &&
+            propsRef.current.selection?.kind === 'zone' &&
+            propsRef.current.selection.id === hitRoot.userData.entityId;
+
+          if (propsRef.current.tool === 'move') {
+            renderer.domElement.style.cursor = !isZone || isSelectedZone ? 'grab' : 'default';
+          } else {
+            renderer.domElement.style.cursor = 'pointer';
+          }
           ctxObj.hoverHelper.box.setFromObject(hitRoot);
-          ctxObj.hoverHelper.visible = true;
+          ctxObj.hoverHelper.visible = !isZone || isSelectedZone || propsRef.current.tool !== 'move';
         } else {
           renderer.domElement.style.cursor = 'default';
           ctxObj.hoverHelper.visible = false;
@@ -522,88 +864,158 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
 
       const onPointerUp = (e: PointerEvent) => {
         if (dragTarget) {
-          const { kind, id, obj } = dragTarget;
+          const {
+            kind,
+            id,
+            obj,
+            initialX,
+            initialZ,
+            initialRotDeg,
+            rotationDeg,
+            isColliding,
+            childObjs,
+          } = dragTarget;
           controls.enabled = true;
           try {
             renderer.domElement.releasePointerCapture(e.pointerId);
           } catch {
             // ignore
           }
-          dragTarget = null;
+
+          // Task 3: Released before moving > 5px -> Click only, do not commit move
+          if (!hasDragged) {
+            dragTarget = null;
+            downPos = null;
+            hasDragged = false;
+            currentPointerId = null;
+            propsRef.current.onLiveDragCoords(null);
+            ctxObj.simsFootprint.visible = false;
+            propsRef.current.onSelect({ kind, id });
+            requestRender();
+            return;
+          }
+
           propsRef.current.onLiveDragCoords(null);
-          ctxObj.simsFootprint.position.set(Number(obj.position.x.toFixed(2)), 0.018, Number(obj.position.z.toFixed(2)));
-          propsRef.current.onCommitMove(
-            kind,
-            id,
-            Number(obj.position.x.toFixed(2)),
-            Number(obj.position.z.toFixed(2)),
-          );
+
+          // Task 8: If colliding (red) -> Bounce back to initial position + toast
+          if (isColliding) {
+            obj.position.x = initialX;
+            obj.position.z = initialZ;
+            if (kind === 'equipment') {
+              obj.rotation.y = THREE.MathUtils.degToRad(initialRotDeg);
+            }
+            const attachedSprite = obj.userData?.labelSprite as THREE.Sprite | undefined;
+            if (attachedSprite) {
+              attachedSprite.position.x = initialX;
+              attachedSprite.position.z = initialZ;
+            }
+            for (const child of childObjs) {
+              child.obj.position.x = child.initialX;
+              child.obj.position.z = child.initialZ;
+              if (child.sprite) {
+                child.sprite.position.x = child.initialX;
+                child.sprite.position.z = child.initialZ;
+              }
+            }
+            ctxObj.setFootprintColor(false);
+            ctxObj.simsFootprint.visible = false;
+            ctxObj.selectionHelper.visible = false;
+            dragTarget = null;
+            downPos = null;
+            hasDragged = false;
+            currentPointerId = null;
+            propsRef.current.onNotice?.('วางไม่สำเร็จ: ตำแหน่งชนกับครุภัณฑ์อื่น');
+            requestRender();
+            return;
+          }
+
+          // Task 3: If returned to exact same place, do not commit move
+          const finalX = Number(obj.position.x.toFixed(2));
+          const finalZ = Number(obj.position.z.toFixed(2));
+          const finalRot = rotationDeg;
+          const returnedSame =
+            Math.abs(finalX - initialX) < 0.001 &&
+            Math.abs(finalZ - initialZ) < 0.001 &&
+            finalRot === initialRotDeg;
+
+          dragTarget = null;
           downPos = null;
+          hasDragged = false;
+          currentPointerId = null;
+          ctxObj.setFootprintColor(false);
+
+          if (!returnedSame) {
+            ctxObj.simsFootprint.position.set(finalX, 0.018, finalZ);
+            propsRef.current.onCommitMove(kind, id, finalX, finalZ, finalRot);
+          } else {
+            ctxObj.simsFootprint.visible = false;
+          }
+          requestRender();
           return;
         }
 
         if (!downPos) return;
         const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
         downPos = null;
-        if (moved > 6) return; // Was an orbit drag
+        if (moved > 5) return; // Orbit drag
 
         updateNdc(e);
         _raycaster.setFromCamera(_ndc, camera);
 
         const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
-        const hitRoot = hits.length > 0 ? findEntityRoot(hits[0].object) : null;
+        const hitRoot = getPrioritizedHit(hits, true, propsRef.current.selection);
+
+        // Task 2: Tap-to-Place removed entirely. Click on empty space = deselect only.
         if (hitRoot) {
           propsRef.current.onSelect({
             kind: hitRoot.userData.entityKind,
             id: hitRoot.userData.entityId,
           });
         } else {
-          // Sims Tap-to-Place: if equipment is selected or in 'move' tool, tapping floor moves it immediately!
-          const currentSel = propsRef.current.selection;
-          if (
-            currentSel?.kind === 'equipment' &&
-            _raycaster.ray.intersectPlane(_groundPlane, _intersectPt)
-          ) {
-            const sc = propsRef.current.scenario;
-            const halfLabW = sc.labWidth / 2;
-            const halfLabD = sc.labDepth / 2;
-            if (
-              Math.abs(_intersectPt.x) <= halfLabW + 0.5 &&
-              Math.abs(_intersectPt.z) <= halfLabD + 0.5
-            ) {
-              const eqItem = sc.equipment.find((item) => item.id === currentSel.id);
-              const halfW = eqItem ? eqItem.width / 2 : 0.4;
-              const halfD = eqItem ? eqItem.depth / 2 : 0.4;
-              const maxX = halfLabW - halfW;
-              const maxZ = halfLabD - halfD;
-              const snapStep = 0.25; // Sims-style 0.25m grid snap
-              const targetX = THREE.MathUtils.clamp(
-                snapValue(_intersectPt.x, snapStep),
-                -maxX,
-                maxX,
-              );
-              const targetZ = THREE.MathUtils.clamp(
-                snapValue(_intersectPt.z, snapStep),
-                -maxZ,
-                maxZ,
-              );
-
-              propsRef.current.onCommitMove(
-                currentSel.kind,
-                currentSel.id,
-                Number(targetX.toFixed(2)),
-                Number(targetZ.toFixed(2)),
-              );
-              return;
-            }
-          }
           propsRef.current.onSelect(null);
+        }
+      };
+
+      // Task 4: pointercancel and lostpointercapture handlers
+      const onPointerCancel = () => {
+        cancelDrag();
+      };
+      const onLostPointerCapture = () => {
+        if (dragTarget && hasDragged) {
+          cancelDrag();
+        }
+      };
+
+      // Task 4 & 7: Esc to cancel drag, R to rotate held equipment 90°
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          if (dragTarget) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelDrag();
+            return;
+          }
+        }
+        if ((e.key === 'r' || e.key === 'R') && dragTarget && dragTarget.kind === 'equipment') {
+          const target = e.target as HTMLElement | null;
+          const inInput =
+            target?.tagName === 'INPUT' ||
+            target?.tagName === 'TEXTAREA' ||
+            target?.tagName === 'SELECT';
+          if (!inInput) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleRotateHeld();
+          }
         }
       };
 
       renderer.domElement.addEventListener('pointerdown', onPointerDown);
       renderer.domElement.addEventListener('pointermove', onPointerMove);
       renderer.domElement.addEventListener('pointerup', onPointerUp);
+      renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.addEventListener('lostpointercapture', onLostPointerCapture);
+      window.addEventListener('keydown', onKeyDown);
 
       requestRender();
 
@@ -615,6 +1027,9 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         renderer.domElement.removeEventListener('pointerdown', onPointerDown);
         renderer.domElement.removeEventListener('pointermove', onPointerMove);
         renderer.domElement.removeEventListener('pointerup', onPointerUp);
+        renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
+        renderer.domElement.removeEventListener('lostpointercapture', onLostPointerCapture);
+        window.removeEventListener('keydown', onKeyDown);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
         renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
         disposeObject3D(scene);

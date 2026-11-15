@@ -202,7 +202,7 @@ export function SimsMoveHUD({
 
             {/* Quick Tip */}
             <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center">
-              💡 แตะพื้น 3 มิติเพื่อย้ายทันที หรือกดลูกศรปรับตำแหน่ง
+              💡 ลากเพื่อจัดตำแหน่ง (กด R หมุน, Alt ปิดสแน็ป) หรือกดลูกศรปรับตำแหน่ง
             </p>
           </div>
         )}

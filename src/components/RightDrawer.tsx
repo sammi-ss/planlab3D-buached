@@ -181,7 +181,7 @@ export function RightDrawer({
                     คลิกเลือกโซน โต๊ะ หรือเครื่องตรวจในโมเดล 3 มิติ
                   </p>
                   <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                    เพื่อดูรายละเอียด แก้ไขชื่อ หมุนทิศทาง หรือสลับเป็นโหมด "ย้าย / จัดวาง" เพื่อลากจัดผัง
+                    เพื่อดูรายละเอียด แก้ไขชื่อ หมุนทิศทาง หรือคลิกลากเพื่อจัดตำแหน่งบนผังได้ทันที
                   </p>
                 </div>
 
@@ -242,7 +242,7 @@ export function RightDrawer({
                   <h3 className="mt-0.5 text-base font-semibold">{selectedOpening.labelTh}</h3>
                 </div>
                 <p className="border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                  สามารถสลับเป็นโหมด "ย้าย / จัดวาง" ด้านล่างเพื่อลากเปลี่ยนตำแหน่งประตูหรือหน้าต่างบานเลื่อนบนผังได้ทันที
+                  คลิกลากประตูหรือหน้าต่างบานเลื่อนบนโมเดล 3 มิติเพื่อเปลี่ยนตำแหน่งได้ทันที (พื้นที่จะกันระยะเปิด 0.9 ม. อัตโนมัติ)
                 </p>
               </div>
             )}

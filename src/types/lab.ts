@@ -23,6 +23,8 @@ export type EquipmentType =
 
 export type EditorTool = 'inspect' | 'move';
 
+export type GridStep = 0.1 | 0.25 | 0.5;
+
 export type CameraPreset = 'iso' | 'top' | 'frontDoor' | 'backDoor';
 
 export type FlowType = 'specimen' | 'waste' | 'staff';
@@ -48,6 +50,8 @@ export interface LabEquipment {
   label: string;
   labelTh: string;
   zoneId: string;
+  /** Optional ID of supporting parent furniture (e.g. bench) beneath this item */
+  supportId?: string;
   /** Center X in meters */
   x: number;
   /** Center Z in meters */

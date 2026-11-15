@@ -46,6 +46,12 @@ import {
   migrateImportedJson,
   saveStoreToStorage,
 } from './utils/migration';
+import {
+  clampToRoom,
+  getFootprint,
+  getItemAABB,
+  resolveZoneId,
+} from './utils/placement';
 
 export default function App() {
   const initial = useMemo(() => loadInitialStore(), []);
@@ -268,12 +274,51 @@ export default function App() {
   }, []);
 
   const handleCommitMove = useCallback(
-    (kind: 'equipment' | 'zone' | 'opening', id: string, x: number, z: number) => {
+    (
+      kind: 'equipment' | 'zone' | 'opening',
+      id: string,
+      x: number,
+      z: number,
+      rotationDeg?: number,
+    ) => {
       updateActiveScenario((sc) => {
         if (kind === 'equipment') {
+          const target = sc.equipment.find((e) => e.id === id);
+          if (!target) return sc;
+          const dx = x - target.x;
+          const dz = z - target.z;
+          const newRot = rotationDeg !== undefined ? rotationDeg : target.rotationDeg;
+          const targetAabb = getItemAABB(target);
+          const childrenOnTop = sc.equipment.filter(
+            (other) =>
+              other.id !== target.id &&
+              other.baseY > 0 &&
+              other.x >= targetAabb.minX &&
+              other.x <= targetAabb.maxX &&
+              other.z >= targetAabb.minZ &&
+              other.z <= targetAabb.maxZ &&
+              other.baseY >= target.baseY + target.height * 0.7,
+          );
+          const childIds = new Set(childrenOnTop.map((c) => c.id));
+          const newParentZone =
+            resolveZoneId({ x, z }, sc.zones, { fallbackToNearest: true }) ?? target.zoneId;
+
           return {
             ...sc,
-            equipment: sc.equipment.map((e) => (e.id === id ? { ...e, x, z } : e)),
+            equipment: sc.equipment.map((e) => {
+              if (e.id === id) {
+                return { ...e, x, z, rotationDeg: newRot, zoneId: newParentZone };
+              }
+              if (childIds.has(e.id)) {
+                const cx = Number((e.x + dx).toFixed(2));
+                const cz = Number((e.z + dz).toFixed(2));
+                const czone =
+                  resolveZoneId({ x: cx, z: cz }, sc.zones, { fallbackToNearest: true }) ??
+                  newParentZone;
+                return { ...e, x: cx, z: cz, zoneId: czone };
+              }
+              return e;
+            }),
           };
         }
         if (kind === 'zone') {
@@ -597,22 +642,78 @@ export default function App() {
       if (selection?.kind !== 'equipment') return;
       const eq = activeScenario.equipment.find((item) => item.id === selection.id);
       if (!eq) return;
-      const halfW = eq.width / 2;
-      const halfD = eq.depth / 2;
-      const maxX = activeScenario.labWidth / 2 - halfW;
-      const maxZ = activeScenario.labDepth / 2 - halfD;
-      const nx = Number(THREE.MathUtils.clamp(eq.x + dx, -maxX, maxX).toFixed(2));
-      const nz = Number(THREE.MathUtils.clamp(eq.z + dz, -maxZ, maxZ).toFixed(2));
-      handleUpdateEquipment(eq.id, { x: nx, z: nz }, `nudge:${eq.id}`);
+      const fp = getFootprint(eq);
+      const clamped = clampToRoom(
+        { x: eq.x + dx, z: eq.z + dz },
+        fp,
+        activeScenario.labWidth,
+        activeScenario.labDepth,
+      );
+      const nx = Number(clamped.x.toFixed(2));
+      const nz = Number(clamped.z.toFixed(2));
+      const actualDx = nx - eq.x;
+      const actualDz = nz - eq.z;
+      if (actualDx === 0 && actualDz === 0) return;
+
+      const parentAabb = getItemAABB(eq);
+      const childrenOnTop = activeScenario.equipment.filter(
+        (other) =>
+          other.id !== eq.id &&
+          other.baseY > 0 &&
+          other.x >= parentAabb.minX &&
+          other.x <= parentAabb.maxX &&
+          other.z >= parentAabb.minZ &&
+          other.z <= parentAabb.maxZ &&
+          other.baseY >= eq.baseY + eq.height * 0.7,
+      );
+      const childIds = new Set(childrenOnTop.map((c) => c.id));
+      const newZoneId =
+        resolveZoneId({ x: nx, z: nz }, activeScenario.zones, { fallbackToNearest: true }) ??
+        eq.zoneId;
+
+      updateActiveScenario(
+        (sc) => ({
+          ...sc,
+          equipment: sc.equipment.map((e) => {
+            if (e.id === eq.id) {
+              return { ...e, x: nx, z: nz, zoneId: newZoneId };
+            }
+            if (childIds.has(e.id)) {
+              const cx = Number((e.x + actualDx).toFixed(2));
+              const cz = Number((e.z + actualDz).toFixed(2));
+              const czone =
+                resolveZoneId({ x: cx, z: cz }, sc.zones, { fallbackToNearest: true }) ??
+                newZoneId;
+              return { ...e, x: cx, z: cz, zoneId: czone };
+            }
+            return e;
+          }),
+        }),
+        { coalesceKey: `nudge:${eq.id}`, timestamp: Date.now() },
+      );
     },
-    [selection, activeScenario, handleUpdateEquipment],
+    [selection, activeScenario, updateActiveScenario],
   );
 
   const handleRotate90Selection = useCallback(() => {
     if (selection?.kind !== 'equipment') return;
     const eq = activeScenario.equipment.find((item) => item.id === selection.id);
     if (!eq) return;
-    handleUpdateEquipment(eq.id, { rotationDeg: (eq.rotationDeg + 90) % 360 });
+    const newRot = (eq.rotationDeg + 90) % 360;
+    const fp = getFootprint({ width: eq.width, depth: eq.depth, rotationDeg: newRot });
+    const clamped = clampToRoom(
+      { x: eq.x, z: eq.z },
+      fp,
+      activeScenario.labWidth,
+      activeScenario.labDepth,
+    );
+    const nx = Number(clamped.x.toFixed(2));
+    const nz = Number(clamped.z.toFixed(2));
+    const newZoneId =
+      resolveZoneId({ x: nx, z: nz }, activeScenario.zones, { fallbackToNearest: true }) ??
+      eq.zoneId;
+
+    handleUpdateEquipment(eq.id, { rotationDeg: newRot, x: nx, z: nz, zoneId: newZoneId });
   }, [selection, activeScenario, handleUpdateEquipment]);
 
   // Keyboard shortcuts
@@ -641,10 +742,7 @@ export default function App() {
         return;
       }
       if (e.key.toLowerCase() === 'r' && selection?.kind === 'equipment') {
-        const eq = activeScenario.equipment.find((item) => item.id === selection.id);
-        if (eq) {
-          handleUpdateEquipment(eq.id, { rotationDeg: (eq.rotationDeg + 90) % 360 });
-        }
+        handleRotate90Selection();
         return;
       }
       if (e.key === 'Escape') {
@@ -658,8 +756,7 @@ export default function App() {
     handleUndo,
     handleRedo,
     selection,
-    activeScenario.equipment,
-    handleUpdateEquipment,
+    handleRotate90Selection,
   ]);
 
   return (
@@ -716,6 +813,7 @@ export default function App() {
             onUserOrbitStart={() => setAutoRotate(false)}
             onLiveDragCoords={setDragHud}
             onCommitMove={handleCommitMove}
+            onNotice={showNotice}
           />
 
           {/* Sims-style Floating Move HUD when equipment is selected */}
@@ -800,7 +898,7 @@ export default function App() {
 
             {tool === 'move' && !dragHud && (
               <div className="w-fit max-w-[280px] sm:max-w-none rounded-lg border border-teal-600/30 bg-teal-50 px-2.5 py-1 text-[11px] sm:text-xs font-medium text-teal-800 dark:border-teal-500/30 dark:bg-teal-950/90 dark:text-teal-200">
-                โหมดย้าย/จัดวาง: แตะพื้นเพื่อวางของทันที หรือลากจัดตำแหน่ง
+                โหมดย้าย/จัดวาง: ลากเพื่อจัดตำแหน่ง (กด R หมุน, Alt ปิดสแน็ป, Esc ยกเลิก)
               </div>
             )}
 
@@ -863,7 +961,6 @@ export default function App() {
             onToggleCollapse={() => setDockCollapsed((v) => !v)}
             cameraPreset={cameraPreset}
             autoRotate={autoRotate}
-            tool={tool}
             showLabels={showLabels}
             activeFlows={activeFlows}
             showCrossings={showCrossings}
@@ -875,10 +972,6 @@ export default function App() {
               setCameraPresetTick((t) => t + 1);
             }}
             onToggleAutoRotate={() => setAutoRotate((v) => !v)}
-            onSelectTool={(nextTool) => {
-              setTool(nextTool);
-              if (nextTool === 'move') setAutoRotate(false);
-            }}
             onToggleLabels={() => setShowLabels((v) => !v)}
             onToggleFlow={(type) =>
               setActiveFlows((prev) => ({ ...prev, [type]: !prev[type] }))

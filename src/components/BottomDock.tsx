@@ -4,20 +4,18 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
-  Move,
   PlusSquare,
   RotateCcw,
   RotateCw,
   Tag,
 } from 'lucide-react';
-import type { CameraPreset, EditorTool, FlowType } from '../types/lab';
+import type { CameraPreset, FlowType } from '../types/lab';
 
 interface BottomDockProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
   cameraPreset: CameraPreset;
   autoRotate: boolean;
-  tool: EditorTool;
   showLabels: boolean;
   activeFlows: Record<FlowType, boolean>;
   showCrossings: boolean;
@@ -25,7 +23,6 @@ interface BottomDockProps {
   catalogOpen: boolean;
   onSelectCamera: (preset: CameraPreset) => void;
   onToggleAutoRotate: () => void;
-  onSelectTool: (tool: EditorTool) => void;
   onToggleLabels: () => void;
   onToggleFlow: (type: FlowType) => void;
   onToggleCrossings: () => void;
@@ -38,7 +35,6 @@ export function BottomDock({
   onToggleCollapse,
   cameraPreset,
   autoRotate,
-  tool,
   showLabels,
   activeFlows,
   showCrossings,
@@ -46,7 +42,6 @@ export function BottomDock({
   catalogOpen,
   onSelectCamera,
   onToggleAutoRotate,
-  onSelectTool,
   onToggleLabels,
   onToggleFlow,
   onToggleCrossings,
@@ -173,7 +168,7 @@ export function BottomDock({
 
         <div className="hidden h-6 w-px bg-slate-200 md:block dark:bg-slate-700" aria-hidden="true" />
 
-        {/* Group 2: Interaction Tools */}
+        {/* Group 2: Layout Actions (unified drag & orbit behavior) */}
         <div
           className={`items-center gap-1 overflow-x-auto no-scrollbar py-0.5 ${
             mobileCategory === 'tools' ? 'flex w-full md:w-auto justify-center sm:justify-start' : 'hidden md:flex'
@@ -181,33 +176,6 @@ export function BottomDock({
           role="group"
           aria-label="เครื่องมือผัง"
         >
-          <button
-            type="button"
-            onClick={() => onSelectTool('inspect')}
-            aria-pressed={tool === 'inspect'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-              tool === 'inspect'
-                ? 'bg-teal-700 text-white dark:bg-teal-600'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-            }`}
-          >
-            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>สำรวจ</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectTool('move')}
-            aria-pressed={tool === 'move'}
-            className={`inline-flex h-8 sm:h-9 items-center gap-1.5 rounded-lg px-2 sm:px-2.5 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
-              tool === 'move'
-                ? 'bg-teal-700 text-white dark:bg-teal-600'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-            }`}
-          >
-            <Move className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">ย้าย / จัดวาง</span>
-            <span className="sm:hidden">ย้ายผัง</span>
-          </button>
           <button
             type="button"
             onClick={onToggleCatalog}

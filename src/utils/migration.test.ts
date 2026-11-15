@@ -186,4 +186,91 @@ describe('schemaVersion & migrate()', () => {
     expect(singleResult?.importedSingleName).toBe('Single Imported Plan');
     expect(singleResult?.store.scenarios.some((s) => s.name === 'Single Imported Plan')).toBe(true);
   });
+
+  it('migrates schemaVersion: 2 -> 3 by binding supportId for rotated benchtop gear and warning on orphans', async () => {
+    const { vi } = await import('vitest');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const v2Store = {
+      schemaVersion: 2,
+      activeScenarioId: 'custom-v2',
+      compareScenarioId: 'scenario-baseline',
+      scenarios: [
+        {
+          id: 'custom-v2',
+          name: 'Custom V2',
+          subtitle: '',
+          isBuiltIn: false,
+          labWidth: 23.7,
+          labDepth: 11.6,
+          zones: DEFAULT_SCENARIOS[0].zones,
+          walls: DEFAULT_SCENARIOS[0].walls,
+          openings: DEFAULT_SCENARIOS[0].openings,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          equipment: [
+            {
+              id: 'bench-rot',
+              type: 'bench',
+              label: 'Rotated Bench',
+              labelTh: 'โต๊ะหมุน 90 องศา',
+              zoneId: 'zone-prep',
+              x: 0,
+              z: 0,
+              width: 3.0,
+              depth: 1.0,
+              height: 0.55,
+              baseY: 0,
+              rotationDeg: 90, // spans X: [-0.5, 0.5], Z: [-1.5, 1.5]
+            },
+            {
+              id: 'centrifuge-top',
+              type: 'centrifuge',
+              label: 'Centrifuge',
+              labelTh: 'เครื่องปั่น',
+              zoneId: 'zone-prep',
+              x: 0.1,
+              z: 1.2, // inside rotated 3.0m depth!
+              width: 0.6,
+              depth: 0.5,
+              height: 0.35,
+              baseY: 0.55,
+              rotationDeg: 90,
+            },
+            {
+              id: 'orphan-pc',
+              type: 'pc',
+              label: 'Floating PC',
+              labelTh: 'คอมลอย',
+              zoneId: 'zone-clean',
+              x: 5,
+              z: 3,
+              width: 0.8,
+              depth: 0.5,
+              height: 0.4,
+              baseY: 0.55,
+              rotationDeg: 0,
+            },
+          ],
+        },
+      ],
+    };
+
+    const migrated = migrate(v2Store);
+    expect(migrated.schemaVersion).toBe(3);
+
+    const custom = migrated.scenarios.find((s) => s.id === 'custom-v2');
+    const cent = custom?.equipment.find((e) => e.id === 'centrifuge-top');
+    const orphan = custom?.equipment.find((e) => e.id === 'orphan-pc');
+
+    expect(cent?.supportId).toBe('bench-rot');
+    expect(orphan?.supportId).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    // Also verify built-in scenarios have supportId attached on elevated items
+    const baseline = migrated.scenarios.find((s) => s.id === 'scenario-baseline');
+    expect(baseline?.equipment.find((e) => e.id === 'eq-pr-c1')?.supportId).toBe('eq-pr-b1');
+    expect(baseline?.equipment.find((e) => e.id === 'eq-an-m1')?.supportId).toBe('eq-an-b1');
+
+    warnSpy.mockRestore();
+  });
 });
