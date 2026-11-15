@@ -1,6 +1,6 @@
-# Central Lab Digital Twin Planner · แบบห้องแลปกลาง (ER เก่า)
+# Central Lab Digital Twin Planner ·
 
-เว็บแอปพลิเคชัน 3D Digital Twin สำหรับจำลองและวางแผนย้ายห้องปฏิบัติการกลาง (Central Laboratory) พร้อมการตรวจสอบมาตรฐาน IC/LA (Infection Control & Laboratory Accreditation), ระบบจำลองเส้นทางสิ่งส่งตรวจ/ขยะ/บุคลากร และเครื่องมือจัดวางครุภัณฑ์
+จำลองและวางแผนย้ายห้องปฏิบัติการกลาง (Central Laboratory) 
 
 ---
 
