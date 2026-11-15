@@ -1,0 +1,6 @@
+{
+  "name": "Central Lab Digital Twin Planner",
+  "description": "Interactive 3D Digital Twin floor plan for hospital central laboratory relocation with IC/LA compliance simulation, layout editing, and executive scenario comparison.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

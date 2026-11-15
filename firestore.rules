@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidScenario(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('subtitle' in data) || (data.subtitle is string && data.subtitle.size() <= 250)) &&
+             (!('authorEmail' in data) || (data.authorEmail is string && data.authorEmail.size() <= 256)) &&
+             (!('isBuiltIn' in data) || data.isBuiltIn is bool) &&
+             (!('labWidth' in data) || (data.labWidth is number && data.labWidth > 0 && data.labWidth <= 100)) &&
+             (!('labDepth' in data) || (data.labDepth is number && data.labDepth > 0 && data.labDepth <= 100)) &&
+             (!('zones' in data) || (data.zones is list && data.zones.size() <= 100)) &&
+             (!('equipment' in data) || (data.equipment is list && data.equipment.size() <= 500)) &&
+             (!('walls' in data) || (data.walls is list && data.walls.size() <= 200)) &&
+             (!('openings' in data) || (data.openings is list && data.openings.size() <= 100)) &&
+             data.updatedAt is string && data.updatedAt.size() <= 50;
+    }
+
+    match /scenarios/{scenarioId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.isBuiltIn == true);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() &&
+                       isValidId(scenarioId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().id == scenarioId &&
+                       isValidScenario(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(scenarioId) &&
+                       resource.data.userId == request.auth.uid &&
+                       incoming().userId == resource.data.userId &&
+                       incoming().id == resource.data.id &&
+                       isValidScenario(incoming());
+      allow delete: if isSignedIn() &&
+                       isValidId(scenarioId) &&
+                       resource.data.userId == request.auth.uid;
+    }
+  }
+}
