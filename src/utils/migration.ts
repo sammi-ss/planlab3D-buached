@@ -2,9 +2,9 @@ import { DEFAULT_SCENARIOS } from '../data/presets';
 import type { LabEquipment, LabScenario } from '../types/lab';
 import { bindSupportIds } from './placement';
 
-export const STORAGE_KEY = 'central_lab_digital_twin_v22';
+export const STORAGE_KEY = 'central_lab_digital_twin_v23';
 export const LEGACY_STORAGE_KEYS = [
-  'central_lab_digital_twin_v21',
+  'central_lab_digital_twin_v22',
   'central_lab_digital_twin_v20',
   'central_lab_digital_twin_v19',
   'central_lab_digital_twin_v18',
@@ -196,7 +196,12 @@ function migrateV0ToV1(raw: Record<string, unknown>): StoreDraft {
  */
 function migrateV1ToV2(draft: StoreDraft): PersistedStore {
   const customScenarios = draft.scenarios
-    .filter((s) => !s.isBuiltIn)
+    .filter(
+      (s) =>
+        !s.isBuiltIn &&
+        !s.name.includes('ผังฐาน: แบบ ER เก่า') &&
+        !s.name.includes('สำเนา: แผนผัง LAB'),
+    )
     .map((s, idx) => ({
       ...normalizeScenario(s, idx),
       isBuiltIn: false,

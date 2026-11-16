@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react';
 import * as THREE from 'three';
+import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
@@ -1556,6 +1557,79 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       ctx.requestRender();
     }, [props.selection, props.scenario]);
 
+    const handleZoomStep = (factor: number) => {
+      const ctx = sceneCtxRef.current;
+      if (!ctx) return;
+      const target = ctx.camGoal ? ctx.camGoal.target.clone() : ctx.controls.target.clone();
+      const pos = ctx.camGoal ? ctx.camGoal.pos.clone() : ctx.camera.position.clone();
+      const offset = pos.sub(target);
+      if (offset.lengthSq() < 1e-6) {
+        offset.set(...CAMERA_PRESETS.iso.pos).sub(new THREE.Vector3(...CAMERA_PRESETS.iso.target));
+      }
+      const nextDist = THREE.MathUtils.clamp(
+        offset.length() * factor,
+        ctx.controls.minDistance,
+        ctx.controls.maxDistance,
+      );
+      offset.setLength(nextDist);
+      ctx.camGoal = {
+        pos: target.clone().add(offset),
+        target,
+      };
+      ctx.requestRender();
+    };
+
+    const handleFitRoom = () => {
+      const ctx = sceneCtxRef.current;
+      if (!ctx) return;
+      const roomCenter = new THREE.Vector3(0, 0.3, 0);
+      const basePos = ctx.camGoal ? ctx.camGoal.pos : ctx.camera.position;
+      const baseTarget = ctx.camGoal ? ctx.camGoal.target : ctx.controls.target;
+      const dir = basePos.clone().sub(baseTarget);
+      if (dir.lengthSq() < 1e-6) {
+        dir.set(...CAMERA_PRESETS.iso.pos).sub(roomCenter);
+      }
+      dir.normalize();
+
+      const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir);
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      else right.normalize();
+      const up = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+      const halfW = propsRef.current.scenario.labWidth / 2;
+      const halfD = propsRef.current.scenario.labDepth / 2;
+      let maxProjX = 0;
+      let maxProjY = 0;
+      let maxDepthOffset = 0;
+      for (const sx of [-halfW, halfW]) {
+        for (const sz of [-halfD, halfD]) {
+          for (const sy of [0, 2.2]) {
+            const p = new THREE.Vector3(sx, sy - roomCenter.y, sz);
+            maxProjX = Math.max(maxProjX, Math.abs(p.dot(right)));
+            maxProjY = Math.max(maxProjY, Math.abs(p.dot(up)));
+            maxDepthOffset = Math.max(maxDepthOffset, p.dot(dir));
+          }
+        }
+      }
+
+      const vFov = THREE.MathUtils.degToRad(ctx.camera.fov) / 2;
+      const hFov = Math.atan(Math.tan(vFov) * Math.max(0.4, ctx.camera.aspect));
+      const fitMargin = 1.15;
+      const distForV = (maxProjY * fitMargin) / Math.tan(vFov) + maxDepthOffset;
+      const distForH = (maxProjX * fitMargin) / Math.tan(hFov) + maxDepthOffset;
+      const fitDist = THREE.MathUtils.clamp(
+        Math.max(distForV, distForH),
+        ctx.controls.minDistance,
+        ctx.controls.maxDistance,
+      );
+
+      ctx.camGoal = {
+        pos: roomCenter.clone().add(dir.multiplyScalar(fitDist)),
+        target: roomCenter,
+      };
+      ctx.requestRender();
+    };
+
     return (
       <div className="relative h-full w-full overflow-hidden">
         <div
@@ -1563,6 +1637,46 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
           className="h-full w-full"
           aria-label="โมเดล 3 มิติ Digital Twin ห้องแลปกลาง"
         />
+
+        {/* Bottom-right Zoom & Fit Controls (shared appearance & position with 2D) */}
+        <div
+          role="group"
+          aria-label="ควบคุมการซูมมุมมอง"
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          className="pointer-events-auto absolute bottom-2 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+        >
+          <button
+            type="button"
+            onClick={() => handleZoomStep(0.8)}
+            title="ซูมเข้า (+)"
+            aria-label="ซูมเข้า (+)"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+          >
+            <ZoomIn className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleZoomStep(1.25)}
+            title="ซูมออก (−)"
+            aria-label="ซูมออก (−)"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+          >
+            <ZoomOut className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={handleFitRoom}
+            title="จัดผังพอดีจอ (ดับเบิลคลิกบนพื้นว่าง)"
+            className="flex h-11 min-w-[44px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+          >
+            <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>พอดีจอ</span>
+          </button>
+        </div>
+
         {contextLost && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-100/95 p-6 text-center dark:bg-slate-900/95">
             <p className="text-base font-semibold text-slate-900 dark:text-slate-100">

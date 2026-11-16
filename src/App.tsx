@@ -7,6 +7,7 @@ import {
   type LabViewportHandle,
   type SelectionState,
 } from './components/LabViewport3D';
+import { PlanView2D, type PlanView2DHandle } from './components/PlanView2D';
 import { RightDrawer, type DrawerTab } from './components/RightDrawer';
 import { SimsMoveHUD } from './components/SimsMoveHUD';
 import { TopBar } from './components/TopBar';
@@ -68,6 +69,7 @@ export default function App() {
   const [compareScenarioId, setCompareScenarioId] = useState<string>(initial.compareScenarioId);
 
   const [isDark, setIsDark] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const [tool, setTool] = useState<EditorTool>('inspect');
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('iso');
   const [cameraPresetTick, setCameraPresetTick] = useState<number>(0);
@@ -91,6 +93,7 @@ export default function App() {
   const [cloudSyncing, setCloudSyncing] = useState<boolean>(false);
 
   const viewportRef = useRef<LabViewportHandle | null>(null);
+  const planView2DRef = useRef<PlanView2DHandle | null>(null);
 
   const showNotice = useCallback((msg: string) => {
     setNotice(msg);
@@ -147,17 +150,25 @@ export default function App() {
     return () => unsubScenarios();
   }, [currentUser]);
 
+  // When not logged in, only the authoritative default scenario is accessible
+  const visibleScenarios = useMemo(() => {
+    if (!currentUser) {
+      return DEFAULT_SCENARIOS;
+    }
+    return scenarios;
+  }, [currentUser, scenarios]);
+
   // Keep active/compare IDs valid when scenarios change (e.g. after undo/delete/import)
   useEffect(() => {
-    if (!scenarios.some((s) => s.id === activeScenarioId)) {
-      setActiveScenarioId(scenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id);
+    if (!visibleScenarios.some((s) => s.id === activeScenarioId)) {
+      setActiveScenarioId(visibleScenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id);
     }
-    if (!scenarios.some((s) => s.id === compareScenarioId)) {
+    if (!visibleScenarios.some((s) => s.id === compareScenarioId)) {
       setCompareScenarioId(
-        scenarios[1]?.id ?? scenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id,
+        visibleScenarios[1]?.id ?? visibleScenarios[0]?.id ?? DEFAULT_SCENARIOS[0].id,
       );
     }
-  }, [scenarios, activeScenarioId, compareScenarioId]);
+  }, [visibleScenarios, activeScenarioId, compareScenarioId]);
 
   // Auto-save to localStorage with schemaVersion
   useEffect(() => {
@@ -170,13 +181,13 @@ export default function App() {
   }, [scenarios, activeScenarioId, compareScenarioId]);
 
   const activeScenario = useMemo(
-    () => scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0],
-    [scenarios, activeScenarioId],
+    () => visibleScenarios.find((s) => s.id === activeScenarioId) ?? visibleScenarios[0],
+    [visibleScenarios, activeScenarioId],
   );
 
   const compareScenario = useMemo(
-    () => scenarios.find((s) => s.id === compareScenarioId) ?? null,
-    [scenarios, compareScenarioId],
+    () => visibleScenarios.find((s) => s.id === compareScenarioId) ?? null,
+    [visibleScenarios, compareScenarioId],
   );
 
   const { routes, crossings } = useMemo(
@@ -227,6 +238,10 @@ export default function App() {
 
       const nowIso = new Date().toISOString();
       if (activeScenario.isBuiltIn) {
+        if (!currentUser) {
+          showNotice('กรุณาเข้าสู่ระบบ (Login) ก่อนสร้างสำเนาผัง');
+          return;
+        }
         const copyId = `scenario-copy-${Date.now()}`;
         const copy: LabScenario = {
           ...JSON.parse(JSON.stringify(candidate)),
@@ -251,7 +266,7 @@ export default function App() {
         options,
       );
     },
-    [activeScenario, mutateScenarios, showNotice],
+    [activeScenario, currentUser, mutateScenarios, showNotice],
   );
 
   const handleUndo = useCallback(() => {
@@ -381,6 +396,10 @@ export default function App() {
 
   const handleAddEquipment = useCallback(
     (cat: EquipmentCatalogItem, targetZoneId?: string) => {
+      if (!currentUser && activeScenario.isBuiltIn) {
+        showNotice('กรุณาเข้าสู่ระบบ (Login) ก่อนสร้างสำเนาผัง');
+        return;
+      }
       const targetZone =
         activeScenario.zones.find((z) => z.id === targetZoneId) ??
         activeScenario.zones.find((z) => z.id === 'zone-prep') ??
@@ -411,10 +430,14 @@ export default function App() {
       setDrawerTab('inspector');
       showNotice(`เพิ่ม "${cat.labelTh}" แล้ว — ลากเพื่อจัดวางใน 3D ได้เลย`);
     },
-    [activeScenario.zones, updateActiveScenario, showNotice],
+    [activeScenario.isBuiltIn, activeScenario.zones, currentUser, updateActiveScenario, showNotice],
   );
 
   const handleDuplicateScenario = useCallback(() => {
+    if (!currentUser) {
+      showNotice('กรุณาเข้าสู่ระบบ (Login) ก่อนสร้างสำเนาผัง');
+      return;
+    }
     const newId = `scenario-custom-${Date.now()}`;
     const copy: LabScenario = {
       ...JSON.parse(JSON.stringify(activeScenario)),
@@ -428,7 +451,7 @@ export default function App() {
     setActiveScenarioId(newId);
     setSelection(null);
     showNotice('สร้างสำเนาผังใหม่เรียบร้อยแล้ว');
-  }, [activeScenario, mutateScenarios, showNotice]);
+  }, [activeScenario, currentUser, mutateScenarios, showNotice]);
 
   const handleRenameScenario = useCallback((id: string, name: string) => {
     dispatchHistory({
@@ -592,6 +615,17 @@ export default function App() {
     a.click();
     showNotice('บันทึกภาพโมเดล (.PNG) แล้ว');
   }, [showNotice]);
+
+  const handleExportSvg = useCallback(() => {
+    if (viewMode === '2d' && planView2DRef.current) {
+      planView2DRef.current.exportSvg();
+    } else {
+      setViewMode('2d');
+      window.setTimeout(() => {
+        planView2DRef.current?.exportSvg();
+      }, 150);
+    }
+  }, [viewMode]);
 
   const handleResetAll = useCallback(() => {
     clearStoredData();
@@ -762,7 +796,7 @@ export default function App() {
   return (
     <div className="flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
         <TopBar
-          scenarios={scenarios}
+          scenarios={visibleScenarios}
           activeScenarioId={activeScenario.id}
           isDark={isDark}
           canUndo={canUndo}
@@ -774,6 +808,8 @@ export default function App() {
           }}
           user={currentUser}
           cloudSyncing={cloudSyncing}
+          viewMode={viewMode}
+          onToggleViewMode={setViewMode}
           onLogin={handleLogin}
           onLogout={handleLogout}
           onSaveToFirebase={handleSaveToFirebase}
@@ -789,32 +825,48 @@ export default function App() {
           onExportJson={handleExportJson}
           onImportJson={handleImportJson}
           onExportPng={handleExportPng}
+          onExportSvg={handleExportSvg}
           onResetCurrentScenario={handleResetCurrentScenario}
           onResetAll={handleResetAll}
         />
 
-        {/* Main Unobstructed 3D Viewport Stage */}
+        {/* Main Viewport Stage: 3D Perspective or 2D Architectural Plan */}
         <main className="relative flex-1 overflow-hidden">
-          <LabViewport3D
-            ref={viewportRef}
-            scenario={activeScenario}
-            isDark={isDark}
-            tool={tool}
-            cameraPreset={cameraPreset}
-            cameraPresetTick={cameraPresetTick}
-            autoRotate={autoRotate}
-            showLabels={showLabels}
-            activeFlows={activeFlows}
-            showCrossings={showCrossings}
-            routes={routes}
-            crossings={crossings}
-            selection={selection}
-            onSelect={handleSelectEntity}
-            onUserOrbitStart={() => setAutoRotate(false)}
-            onLiveDragCoords={setDragHud}
-            onCommitMove={handleCommitMove}
-            onNotice={showNotice}
-          />
+          {viewMode === '3d' ? (
+            <LabViewport3D
+              ref={viewportRef}
+              scenario={activeScenario}
+              isDark={isDark}
+              tool={tool}
+              cameraPreset={cameraPreset}
+              cameraPresetTick={cameraPresetTick}
+              autoRotate={autoRotate}
+              showLabels={showLabels}
+              activeFlows={activeFlows}
+              showCrossings={showCrossings}
+              routes={routes}
+              crossings={crossings}
+              selection={selection}
+              onSelect={handleSelectEntity}
+              onUserOrbitStart={() => setAutoRotate(false)}
+              onLiveDragCoords={setDragHud}
+              onCommitMove={handleCommitMove}
+              onNotice={showNotice}
+            />
+          ) : (
+            <PlanView2D
+              ref={planView2DRef}
+              scenario={activeScenario}
+              isDark={isDark}
+              tool={tool}
+              selection={selection}
+              onSelect={handleSelectEntity}
+              onLiveDragCoords={setDragHud}
+              onCommitMove={handleCommitMove}
+              onNotice={showNotice}
+              showLabels={showLabels}
+            />
+          )}
 
           {/* Sims-style Floating Move HUD when equipment is selected */}
           {selection?.kind === 'equipment' && (
@@ -922,7 +974,7 @@ export default function App() {
           <RightDrawer
             activeTab={drawerTab}
             scenario={activeScenario}
-            scenarios={scenarios}
+            scenarios={visibleScenarios}
             compareScenarioId={compareScenarioId}
             selection={selection}
             complianceRules={complianceRules}
@@ -956,9 +1008,10 @@ export default function App() {
             onAddEquipment={handleAddEquipment}
           />
 
-          <BottomDock
-            collapsed={dockCollapsed}
-            onToggleCollapse={() => setDockCollapsed((v) => !v)}
+          {viewMode === '3d' && (
+            <BottomDock
+              collapsed={dockCollapsed}
+              onToggleCollapse={() => setDockCollapsed((v) => !v)}
             cameraPreset={cameraPreset}
             autoRotate={autoRotate}
             showLabels={showLabels}
@@ -982,6 +1035,7 @@ export default function App() {
             }
             onResetCurrentScenario={handleResetCurrentScenario}
           />
+        )}
         </main>
     </div>
   );

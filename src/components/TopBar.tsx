@@ -2,11 +2,14 @@ import { useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   BarChart3,
+  Box,
   Camera,
   Cloud,
   CloudUpload,
   CopyPlus,
   Download,
+  FileCode,
+  Layers,
   Loader2,
   LogIn,
   LogOut,
@@ -30,6 +33,8 @@ interface TopBarProps {
   complianceSummary?: { passed: number; total: number };
   user: User | null;
   cloudSyncing: boolean;
+  viewMode: '3d' | '2d';
+  onToggleViewMode: (mode: '3d' | '2d') => void;
   onLogin: () => void;
   onLogout: () => void;
   onSaveToFirebase: () => void;
@@ -42,6 +47,7 @@ interface TopBarProps {
   onExportJson: () => void;
   onImportJson: (file: File) => void;
   onExportPng: () => void;
+  onExportSvg?: () => void;
   onResetCurrentScenario: () => void;
   onResetAll: () => void;
 }
@@ -56,6 +62,8 @@ export function TopBar({
   complianceSummary,
   user,
   cloudSyncing,
+  viewMode,
+  onToggleViewMode,
   onLogin,
   onLogout,
   onSaveToFirebase,
@@ -68,6 +76,7 @@ export function TopBar({
   onExportJson,
   onImportJson,
   onExportPng,
+  onExportSvg,
   onResetCurrentScenario,
   onResetAll,
 }: TopBarProps) {
@@ -77,39 +86,75 @@ export function TopBar({
 
   return (
     <header className="relative z-20 flex h-14 w-full max-w-full shrink-0 items-center justify-between gap-1.5 sm:gap-3 border-b border-slate-200 bg-white px-2 sm:px-4 text-slate-900 overflow-hidden dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
-      {/* Zone 1: Brand Title */}
-      <div className="flex min-w-0 items-center gap-2 shrink-0">
-        <span className="hidden sm:inline truncate text-base font-semibold tracking-tight whitespace-nowrap">
-          แผนผังห้องปฏิบัติการการแพทย์
+      {/* Zone 1: Brand Title & 2D/3D Mode Switcher */}
+      <div className="flex min-w-0 items-center gap-2 sm:gap-3 shrink-0">
+        <span className="truncate text-sm sm:text-base font-semibold tracking-tight whitespace-nowrap">
+          แผนผัง LAB
         </span>
-        <span className="sm:hidden truncate text-sm font-semibold tracking-tight whitespace-nowrap">
-          แลปกลาง ER
-        </span>
+
+        {/* 2D / 3D Switcher */}
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs dark:border-slate-700 dark:bg-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={() => onToggleViewMode('3d')}
+            aria-pressed={viewMode === '3d'}
+            className={`flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 text-xs font-semibold transition-colors ${
+              viewMode === '3d'
+                ? 'bg-white text-teal-700 shadow-xs dark:bg-slate-700 dark:text-teal-300'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <Box className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>3D</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleViewMode('2d')}
+            aria-pressed={viewMode === '2d'}
+            className={`flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1 text-xs font-semibold transition-colors ${
+              viewMode === '2d'
+                ? 'bg-white text-teal-700 shadow-xs dark:bg-slate-700 dark:text-teal-300'
+                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>2D แปลน</span>
+          </button>
+        </div>
       </div>
 
       {/* Zone 2: Scenario Switcher & Workspace Views */}
       <div className="flex items-center gap-1 sm:gap-2 min-w-0 overflow-x-auto no-scrollbar">
-        <label htmlFor="scenario-select" className="sr-only">
-          เลือกทางเลือกผัง
-        </label>
-        <select
-          id="scenario-select"
-          value={activeScenarioId}
-          onChange={(e) => onSelectScenario(e.target.value)}
-          className="h-9 max-w-[115px] sm:max-w-[200px] md:max-w-[240px] rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-2.5 text-xs sm:text-sm font-medium text-slate-800 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-        >
-          {scenarios.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        {scenarios.length > 1 && (
+          <>
+            <label htmlFor="scenario-select" className="sr-only">
+              เลือกทางเลือกผัง
+            </label>
+            <select
+              id="scenario-select"
+              value={activeScenarioId}
+              onChange={(e) => onSelectScenario(e.target.value)}
+              className="h-9 max-w-[115px] sm:max-w-[200px] md:max-w-[240px] rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-2.5 text-xs sm:text-sm font-medium text-slate-800 focus-visible:outline-2 focus-visible:outline-teal-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+            >
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
         <button
           type="button"
           onClick={onDuplicateScenario}
-          title="คัดลอกผังปัจจุบันเป็นทางเลือกใหม่เพื่อทดลองแก้ไข"
-          className="hidden sm:inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-slate-700 transition-colors hover:border-teal-600 hover:text-teal-700 focus-visible:outline-2 focus-visible:outline-teal-600 whitespace-nowrap dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-teal-400 dark:hover:text-teal-300"
+          disabled={!user}
+          title={
+            user
+              ? 'คัดลอกผังปัจจุบันเป็นทางเลือกใหม่เพื่อทดลองแก้ไข'
+              : 'กรุณาเข้าสู่ระบบ (Login) ก่อนจึงจะสร้างสำเนาผังได้'
+          }
+          className="hidden sm:inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-slate-700 transition-colors hover:border-teal-600 hover:text-teal-700 focus-visible:outline-2 focus-visible:outline-teal-600 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-slate-200 disabled:hover:text-slate-700 whitespace-nowrap dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-teal-400 dark:hover:text-teal-300 dark:disabled:hover:border-slate-700 dark:disabled:hover:text-slate-200"
         >
           <CopyPlus className="h-4 w-4" aria-hidden="true" />
           <span className="hidden md:inline">สร้างสำเนาผัง</span>
@@ -336,14 +381,15 @@ export function TopBar({
                 {/* Mobile-only actions in menu */}
                 <button
                   type="button"
+                  disabled={!user}
                   onClick={() => {
                     setMenuOpen(false);
                     onDuplicateScenario();
                   }}
-                  className="flex sm:hidden w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                  className="flex sm:hidden w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   <CopyPlus className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden="true" />
-                  <span>สร้างสำเนาผังใหม่</span>
+                  <span>{user ? 'สร้างสำเนาผังใหม่' : 'สร้างสำเนาผังใหม่ (ต้อง Login)'}</span>
                 </button>
                 {canUndo && (
                   <button
@@ -383,6 +429,19 @@ export function TopBar({
                   <Camera className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden="true" />
                   <span>บันทึกภาพโมเดล (.PNG)</span>
                 </button>
+                {onExportSvg && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onExportSvg();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <FileCode className="h-4 w-4 text-teal-600 dark:text-teal-400" aria-hidden="true" />
+                    <span>ส่งออกแปลน 2 มิติ (.SVG)</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
