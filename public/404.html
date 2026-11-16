@@ -2,11 +2,13 @@
 <html lang="th">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="refresh" content="0; url=./" />
-    <title>Redirecting...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Central Lab Digital Twin</title>
     <script>
-      // Single Page Application redirect for GitHub Pages
-      window.location.replace('./');
+      // Safely redirect to subfolder root without escaping to domain root
+      const segments = window.location.pathname.split('/').filter(Boolean);
+      const basePath = segments.length > 0 ? '/' + segments[0] + '/' : '/';
+      window.location.replace(basePath);
     </script>
   </head>
   <body>
