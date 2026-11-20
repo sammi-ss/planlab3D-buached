@@ -147,6 +147,9 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
   ) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const svgRef = useRef<SVGSVGElement | null>(null);
+    const hoverTooltipRef = useRef<HTMLDivElement | null>(null);
+    const hoverTitleRef = useRef<HTMLDivElement | null>(null);
+    const hoverHintRef = useRef<HTMLDivElement | null>(null);
 
     // Viewport transform state: pan (in pixels from top-left) and zoom (pixels per meter)
     const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -160,6 +163,8 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
       w: 800,
       h: 600,
     });
+    const [isPanning, setIsPanning] = useState(false);
+    const [hoveredEquipId, setHoveredEquipId] = useState<string | null>(null);
 
     // Dragging state
     const [dragging, setDragging] = useState<DraggingState | null>(null);
@@ -373,6 +378,12 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
       return () => window.removeEventListener('keydown', onKeyDown);
     }, [cancelDrag, rotateHeldItem]);
 
+    const hideHoverTooltip = useCallback(() => {
+      if (hoverTooltipRef.current) {
+        hoverTooltipRef.current.style.opacity = '0';
+      }
+    }, []);
+
     // Mouse pointer down on background (pan) or equipment (drag candidate)
     const handlePointerDown = (e: React.PointerEvent, item?: LabEquipment) => {
       const svg = svgRef.current;
@@ -385,6 +396,8 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
 
       // Right click or middle click always pans
       const isPanClick = e.button === 1 || e.button === 2 || !item;
+      hideHoverTooltip();
+      if (isPanClick) setIsPanning(true);
 
       pointerDownRef.current = {
         startX: e.clientX,
@@ -439,7 +452,54 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
 
     const handlePointerMove = (e: React.PointerEvent) => {
       const pt = pointerDownRef.current;
-      if (!pt) return;
+      if (!pt) {
+        // Desktop pointer hover feedback (equipment or zone tooltip)
+        if (e.pointerType === 'touch') return;
+        const svg = svgRef.current;
+        if (!svg) return;
+        const targetEl = e.target as Element | null;
+        const eqGroup = targetEl?.closest('[data-equipment-id]');
+        const eqId = eqGroup?.getAttribute('data-equipment-id') ?? null;
+        setHoveredEquipId((prev) => (prev === eqId ? prev : eqId));
+
+        let title = '';
+        let hint = '';
+        if (eqId) {
+          const item = scenario.equipment.find((eq) => eq.id === eqId);
+          if (item) {
+            title = item.labelTh;
+            hint = 'คลิกเลือก · ลากย้ายตำแหน่ง · กด R หมุน 90°';
+          }
+        } else {
+          const rect = svg.getBoundingClientRect();
+          const worldX = (e.clientX - rect.left - panRef.current.x) / zoomRef.current;
+          const worldZ = (e.clientY - rect.top - panRef.current.y) / zoomRef.current;
+          const hoveredZone = scenario.zones.find(
+            (z) =>
+              worldX >= z.x - z.width / 2 &&
+              worldX <= z.x + z.width / 2 &&
+              worldZ >= z.z - z.depth / 2 &&
+              worldZ <= z.z + z.depth / 2,
+          );
+          if (hoveredZone) {
+            title = hoveredZone.nameTh;
+            hint = 'ลากเพื่อเลื่อนผัง · ล้อเมาส์ซูมที่เคอร์เซอร์';
+          }
+        }
+
+        if (title && hoverTooltipRef.current && hoverTitleRef.current && hoverHintRef.current) {
+          hoverTitleRef.current.textContent = title;
+          hoverHintRef.current.textContent = hint;
+          const tipX = Math.min(e.clientX + 16, window.innerWidth - 230);
+          const tipY = Math.min(e.clientY + 18, window.innerHeight - 68);
+          hoverTooltipRef.current.style.transform = `translate3d(${tipX}px, ${tipY}px, 0)`;
+          hoverTooltipRef.current.style.opacity = '1';
+        } else {
+          hideHoverTooltip();
+        }
+        return;
+      }
+
       const dx = e.clientX - pt.startX;
       const dy = e.clientY - pt.startY;
       const dist = Math.hypot(dx, dy);
@@ -531,6 +591,7 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
     };
 
     const handlePointerUp = (e: React.PointerEvent) => {
+      setIsPanning(false);
       const pt = pointerDownRef.current;
       const svg = svgRef.current;
       if (svg && pt) {
@@ -920,6 +981,7 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
     // Render single equipment element
     const renderEquipment = (item: LabEquipment) => {
       const isSelected = selection?.kind === 'equipment' && selection.id === item.id;
+      const isHovered = hoveredEquipId === item.id && !dragging;
       const isBeingDragged = dragging?.item.id === item.id;
       const isChildBeingMoved = dragging?.childMachines.some((c) => c.id === item.id);
 
@@ -970,6 +1032,8 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
         strokeColor = '#ef4444';
       } else if (isSelected) {
         strokeColor = '#0f766e';
+      } else if (isHovered) {
+        strokeColor = '#0284c7';
       }
 
       return (
@@ -1062,13 +1126,22 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
           ref={svgRef}
           width={containerSize.w}
           height={containerSize.h}
-          className="absolute inset-0 block h-full w-full touch-none"
+          className={`absolute inset-0 block h-full w-full touch-none ${
+            isPanning ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
           style={{ touchAction: 'none' }}
           onWheel={onWheel}
           onPointerDown={(e) => handlePointerDown(e)}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onPointerCancel={cancelDrag}
+          onPointerCancel={() => {
+            setIsPanning(false);
+            cancelDrag();
+          }}
+          onPointerLeave={() => {
+            setHoveredEquipId(null);
+            hideHoverTooltip();
+          }}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -1251,6 +1324,26 @@ export const PlanView2D = React.forwardRef<PlanView2DHandle, PlanView2DProps>(
             </g>
           )}
         </svg>
+
+        {/* Desktop Hover Tooltip (follows pointermove cleanly without re-renders) */}
+        <div
+          ref={hoverTooltipRef}
+          aria-hidden="true"
+          style={{ opacity: 0, transform: 'translate3d(-999px, -999px, 0)' }}
+          className="pointer-events-none fixed left-0 top-0 z-30 hidden sm:block max-w-[240px] rounded-lg border border-slate-200/90 bg-white/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm transition-opacity duration-100 dark:border-slate-700 dark:bg-slate-900/95"
+        >
+          <div ref={hoverTitleRef} className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100" />
+          <div ref={hoverHintRef} className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400" />
+        </div>
+
+        {/* Desktop Mouse Hint (bottom-center on wide desktop screens) */}
+        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-10 hidden lg:flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-300">
+          <span>ลากพื้นว่าง / คลิกขวา: เลื่อนผัง</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span>ล้อเมาส์: ซูมที่เคอร์เซอร์</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span>ดับเบิลคลิก: พอดีจอ</span>
+        </div>
 
         {/* Bottom-right Zoom & Fit Controls (shared appearance & position with 3D) */}
         <div

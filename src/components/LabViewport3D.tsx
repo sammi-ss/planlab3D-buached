@@ -107,6 +107,10 @@ function detectSoftwareWebGL(): boolean {
 export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
   function LabViewport3D(props, ref) {
     const mountRef = useRef<HTMLDivElement | null>(null);
+    const compassDialRef = useRef<HTMLSpanElement | null>(null);
+    const hoverTooltipRef = useRef<HTMLDivElement | null>(null);
+    const hoverTitleRef = useRef<HTMLDivElement | null>(null);
+    const hoverHintRef = useRef<HTMLDivElement | null>(null);
     const [contextLost, setContextLost] = useState(false);
 
     // Mutable refs so WebGL loop & handlers never require tearing down renderer
@@ -205,8 +209,8 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       controls.zoomToCursor = true;
       controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.ROTATE,
-        RIGHT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT: THREE.MOUSE.PAN,
       };
       controls.touches = {
         ONE: THREE.TOUCH.ROTATE,
@@ -214,6 +218,8 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       };
       controls.minDistance = 1.0;
       controls.maxDistance = 80.0;
+      controls.minPolarAngle = 0.04;
+      controls.maxPolarAngle = Math.PI * 0.485;
       controls.target.set(...CAMERA_PRESETS.iso.target);
       controls.autoRotateSpeed = 0.9;
 
@@ -250,6 +256,42 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       const hoverHelper = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(0x38bdf8));
       hoverHelper.visible = false;
       scene.add(hoverHelper);
+
+      // Google Earth-style live pointer floor reticle (tracks mouse pointer on ground plane)
+      const floorReticle = new THREE.Group();
+      floorReticle.visible = false;
+      const reticleRingMat = new THREE.MeshBasicMaterial({
+        color: 0x0f766e,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const reticleRing = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.21, 32), reticleRingMat);
+      reticleRing.rotation.x = -Math.PI / 2;
+      const reticleDot = new THREE.Mesh(new THREE.CircleGeometry(0.042, 16), reticleRingMat);
+      reticleDot.rotation.x = -Math.PI / 2;
+      floorReticle.add(reticleRing, reticleDot);
+      scene.add(floorReticle);
+
+      // Google Earth-style orbit pivot crosshair shown while orbiting/panning camera angle
+      const orbitPivot = new THREE.Group();
+      orbitPivot.visible = false;
+      const pivotMat = new THREE.MeshBasicMaterial({
+        color: 0x0284c7,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const pivotRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.34, 32), pivotMat);
+      pivotRing.rotation.x = -Math.PI / 2;
+      const pivotCrossX = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.03), pivotMat);
+      pivotCrossX.rotation.x = -Math.PI / 2;
+      const pivotCrossZ = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.56), pivotMat);
+      pivotCrossZ.rotation.x = -Math.PI / 2;
+      orbitPivot.add(pivotRing, pivotCrossX, pivotCrossZ);
+      scene.add(orbitPivot);
 
       // Sims 3D Green/Red Tile Footprint Helper
       const simsFootprint = new THREE.Group();
@@ -432,13 +474,54 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       const resizeObs = new ResizeObserver(handleResize);
       resizeObs.observe(container);
 
+      const hideHoverTooltip = () => {
+        if (hoverTooltipRef.current) {
+          hoverTooltipRef.current.style.opacity = '0';
+        }
+      };
+
+      const syncCompassRose = () => {
+        if (!compassDialRef.current) return;
+        const dx = camera.position.x - controls.target.x;
+        const dz = camera.position.z - controls.target.z;
+        const azDeg = THREE.MathUtils.radToDeg(Math.atan2(dx, dz));
+        compassDialRef.current.style.transform = `rotate(${azDeg.toFixed(1)}deg)`;
+      };
+      syncCompassRose();
+
+      let pivotHideTimer: number | null = null;
+      let isOrbitingOrPanning = false;
+      let activeNavButton: 'orbit' | 'pan' = 'orbit';
+
       // OrbitControls events
       controls.addEventListener('change', () => {
+        orbitPivot.position.set(controls.target.x, 0.03, controls.target.z);
+        syncCompassRose();
         requestRender();
       });
       controls.addEventListener('start', () => {
         ctxObj.camGoal = null;
+        isOrbitingOrPanning = true;
+        if (pivotHideTimer !== null) {
+          window.clearTimeout(pivotHideTimer);
+          pivotHideTimer = null;
+        }
+        orbitPivot.position.set(controls.target.x, 0.03, controls.target.z);
+        orbitPivot.visible = true;
+        floorReticle.visible = false;
+        hideHoverTooltip();
+        renderer.domElement.style.cursor = activeNavButton === 'pan' ? 'move' : 'grabbing';
         propsRef.current.onUserOrbitStart();
+        requestRender();
+      });
+      controls.addEventListener('end', () => {
+        isOrbitingOrPanning = false;
+        renderer.domElement.style.cursor = 'grab';
+        if (pivotHideTimer !== null) window.clearTimeout(pivotHideTimer);
+        pivotHideTimer = window.setTimeout(() => {
+          orbitPivot.visible = false;
+          requestRender();
+        }, 450);
       });
 
       // Task 5: Double-click object = zoom to object, Double-click empty floor = center room
@@ -682,7 +765,13 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       };
 
       const onPointerDown = (e: PointerEvent) => {
-        if (e.button !== 0) return;
+        activeNavButton = e.button === 1 || e.button === 2 || e.shiftKey ? 'pan' : 'orbit';
+        hideHoverTooltip();
+        floorReticle.visible = false;
+        if (e.button !== 0 || e.shiftKey) {
+          renderer.domElement.style.cursor = activeNavButton === 'pan' ? 'move' : 'grabbing';
+          return;
+        }
         downPos = { x: e.clientX, y: e.clientY };
         hasDragged = false;
         currentPointerId = e.pointerId;
@@ -892,14 +981,41 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
           return;
         }
 
-        // Throttled hover raycast (20fps)
+        // While actively orbiting/panning with OrbitControls, keep cursor & skip hover raycasts
+        if (isOrbitingOrPanning || (e.buttons !== 0 && !dragTarget)) {
+          const isPanActive = e.buttons === 2 || e.buttons === 4 || e.shiftKey;
+          renderer.domElement.style.cursor = isPanActive ? 'move' : 'grabbing';
+          floorReticle.visible = false;
+          hideHoverTooltip();
+          return;
+        }
+
+        // Desktop floor reticle tracking + throttled hover raycast (~22fps)
         const now = performance.now();
-        if (now - lastHoverCheck < 50) return;
+        if (now - lastHoverCheck < 45) return;
         lastHoverCheck = now;
 
         _raycaster.setFromCamera(_ndc, camera);
+
+        if (e.pointerType !== 'touch' && _raycaster.ray.intersectPlane(_groundPlane, _intersectPt)) {
+          const sc = propsRef.current.scenario;
+          const withinRoom =
+            Math.abs(_intersectPt.x) <= sc.labWidth / 2 + 2.5 &&
+            Math.abs(_intersectPt.z) <= sc.labDepth / 2 + 2.5;
+          if (withinRoom) {
+            floorReticle.position.set(_intersectPt.x, 0.025, _intersectPt.z);
+            floorReticle.visible = true;
+          } else {
+            floorReticle.visible = false;
+          }
+        } else {
+          floorReticle.visible = false;
+        }
+
         const hits = _raycaster.intersectObjects(ctxObj.clickableRoots, true);
         const hitRoot = getPrioritizedHit(hits, propsRef.current.tool !== 'move', propsRef.current.selection);
+        const tooltipHit = hitRoot ?? getPrioritizedHit(hits, true, propsRef.current.selection);
+
         if (hitRoot) {
           const isZone = hitRoot.userData.entityKind === 'zone';
           const isSelectedZone =
@@ -908,15 +1024,33 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
             propsRef.current.selection.id === hitRoot.userData.entityId;
 
           if (propsRef.current.tool === 'move') {
-            renderer.domElement.style.cursor = !isZone || isSelectedZone ? 'grab' : 'default';
+            renderer.domElement.style.cursor = !isZone || isSelectedZone ? 'grab' : 'grab';
           } else {
             renderer.domElement.style.cursor = 'pointer';
           }
           ctxObj.hoverHelper.box.setFromObject(hitRoot);
           ctxObj.hoverHelper.visible = !isZone || isSelectedZone || propsRef.current.tool !== 'move';
         } else {
-          renderer.domElement.style.cursor = 'default';
+          renderer.domElement.style.cursor = e.shiftKey ? 'move' : 'grab';
           ctxObj.hoverHelper.visible = false;
+        }
+
+        if (e.pointerType !== 'touch' && tooltipHit && hoverTooltipRef.current && hoverTitleRef.current && hoverHintRef.current) {
+          const label = (tooltipHit.userData.label as string) || '';
+          const kind = tooltipHit.userData.entityKind as 'equipment' | 'zone' | 'opening';
+          hoverTitleRef.current.textContent = label;
+          hoverHintRef.current.textContent =
+            kind === 'zone'
+              ? 'คลิกเลือกโซน · ลากซ้ายหมุนมุม · ลากขวาเลื่อน'
+              : propsRef.current.tool === 'move'
+                ? 'คลิกเลือก · ลากย้ายตำแหน่ง · กด R หมุน'
+                : 'คลิกดูรายละเอียด · ดับเบิลคลิกซูมใกล้';
+          const tipX = Math.min(e.clientX + 16, window.innerWidth - 230);
+          const tipY = Math.min(e.clientY + 18, window.innerHeight - 68);
+          hoverTooltipRef.current.style.transform = `translate3d(${tipX}px, ${tipY}px, 0)`;
+          hoverTooltipRef.current.style.opacity = '1';
+        } else {
+          hideHoverTooltip();
         }
         requestRender();
       };
@@ -1045,7 +1179,15 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         }
       };
 
-      // Task 4 & 7: Esc to cancel drag, R to rotate held equipment 90°
+      const onPointerLeave = () => {
+        floorReticle.visible = false;
+        ctxObj.hoverHelper.visible = false;
+        hideHoverTooltip();
+        renderer.domElement.style.cursor = 'default';
+        requestRender();
+      };
+
+      // Task 4 & 7: Esc to cancel drag, R to rotate held equipment 90°, plus desktop Arrow-key navigation
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
           if (dragTarget) {
@@ -1055,17 +1197,56 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
             return;
           }
         }
+        const target = e.target as HTMLElement | null;
+        const inInput =
+          target?.tagName === 'INPUT' ||
+          target?.tagName === 'TEXTAREA' ||
+          target?.tagName === 'SELECT';
+        if (inInput) return;
+
         if ((e.key === 'r' || e.key === 'R') && dragTarget && dragTarget.kind === 'equipment') {
-          const target = e.target as HTMLElement | null;
-          const inInput =
-            target?.tagName === 'INPUT' ||
-            target?.tagName === 'TEXTAREA' ||
-            target?.tagName === 'SELECT';
-          if (!inInput) {
-            e.preventDefault();
-            e.stopPropagation();
-            handleRotateHeld();
+          e.preventDefault();
+          e.stopPropagation();
+          handleRotateHeld();
+          return;
+        }
+
+        if (dragTarget) return;
+
+        // Desktop keyboard Google Earth-style navigation (Arrows = pan, Shift+Arrows = orbit/tilt)
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const baseTarget = ctxObj.camGoal ? ctxObj.camGoal.target.clone() : controls.target.clone();
+          const basePos = ctxObj.camGoal ? ctxObj.camGoal.pos.clone() : camera.position.clone();
+          const offset = basePos.clone().sub(baseTarget);
+
+          if (e.shiftKey) {
+            const spherical = new THREE.Spherical().setFromVector3(offset);
+            const azStep = THREE.MathUtils.degToRad(14);
+            const polarStep = THREE.MathUtils.degToRad(9);
+            if (e.key === 'ArrowLeft') spherical.theta += azStep;
+            if (e.key === 'ArrowRight') spherical.theta -= azStep;
+            if (e.key === 'ArrowUp') spherical.phi = Math.max(0.06, spherical.phi - polarStep);
+            if (e.key === 'ArrowDown') spherical.phi = Math.min(Math.PI * 0.47, spherical.phi + polarStep);
+            offset.setFromSpherical(spherical);
+            ctxObj.camGoal = { pos: baseTarget.clone().add(offset), target: baseTarget };
+          } else {
+            const forward = new THREE.Vector3(baseTarget.x - basePos.x, 0, baseTarget.z - basePos.z);
+            if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+            forward.normalize();
+            const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+            const panStep = Math.max(0.6, Math.min(2.2, offset.length() * 0.08));
+            const moveVec = new THREE.Vector3();
+            if (e.key === 'ArrowUp') moveVec.addScaledVector(forward, panStep);
+            if (e.key === 'ArrowDown') moveVec.addScaledVector(forward, -panStep);
+            if (e.key === 'ArrowRight') moveVec.addScaledVector(right, panStep);
+            if (e.key === 'ArrowLeft') moveVec.addScaledVector(right, -panStep);
+            ctxObj.camGoal = {
+              pos: basePos.clone().add(moveVec),
+              target: baseTarget.clone().add(moveVec),
+            };
           }
+          requestRender();
         }
       };
 
@@ -1074,12 +1255,14 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       renderer.domElement.addEventListener('pointerup', onPointerUp);
       renderer.domElement.addEventListener('pointercancel', onPointerCancel);
       renderer.domElement.addEventListener('lostpointercapture', onLostPointerCapture);
+      renderer.domElement.addEventListener('pointerleave', onPointerLeave);
       window.addEventListener('keydown', onKeyDown);
 
       requestRender();
 
       return () => {
         disposed = true;
+        if (pivotHideTimer !== null) window.clearTimeout(pivotHideTimer);
         cancelAnimationFrame(frameId);
         clearTimeout(frameId);
         resizeObs.disconnect();
@@ -1088,6 +1271,7 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
         renderer.domElement.removeEventListener('pointerup', onPointerUp);
         renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
         renderer.domElement.removeEventListener('lostpointercapture', onLostPointerCapture);
+        renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
         renderer.domElement.removeEventListener('dblclick', onDblClick);
         window.removeEventListener('keydown', onKeyDown);
         renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
@@ -1630,6 +1814,41 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
       ctx.requestRender();
     };
 
+    const handleResetNorth = () => {
+      const ctx = sceneCtxRef.current;
+      if (!ctx) return;
+      const target = ctx.camGoal ? ctx.camGoal.target.clone() : ctx.controls.target.clone();
+      const pos = ctx.camGoal ? ctx.camGoal.pos.clone() : ctx.camera.position.clone();
+      const offset = pos.sub(target);
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      spherical.theta = 0;
+      spherical.phi = THREE.MathUtils.clamp(spherical.phi, 0.06, Math.PI * 0.47);
+      offset.setFromSpherical(spherical);
+      ctx.camGoal = {
+        pos: target.clone().add(offset),
+        target,
+      };
+      ctx.requestRender();
+    };
+
+    const handleToggleTilt = () => {
+      const ctx = sceneCtxRef.current;
+      if (!ctx) return;
+      const target = ctx.camGoal ? ctx.camGoal.target.clone() : ctx.controls.target.clone();
+      const pos = ctx.camGoal ? ctx.camGoal.pos.clone() : ctx.camera.position.clone();
+      const offset = pos.sub(target);
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      // Toggle between steep top-down view and angled 3D perspective preserving azimuth & distance
+      const isCurrentlyTopDown = spherical.phi < 0.35;
+      spherical.phi = isCurrentlyTopDown ? 0.92 : 0.08;
+      offset.setFromSpherical(spherical);
+      ctx.camGoal = {
+        pos: target.clone().add(offset),
+        target,
+      };
+      ctx.requestRender();
+    };
+
     return (
       <div className="relative h-full w-full overflow-hidden">
         <div
@@ -1638,43 +1857,109 @@ export const LabViewport3D = forwardRef<LabViewportHandle, LabViewport3DProps>(
           aria-label="โมเดล 3 มิติ Digital Twin ห้องแลปกลาง"
         />
 
-        {/* Bottom-right Zoom & Fit Controls (shared appearance & position with 2D) */}
+        {/* Desktop Hover Tooltip (follows pointermove cleanly without re-renders) */}
         <div
-          role="group"
-          aria-label="ควบคุมการซูมมุมมอง"
+          ref={hoverTooltipRef}
+          aria-hidden="true"
+          style={{ opacity: 0, transform: 'translate3d(-999px, -999px, 0)' }}
+          className="pointer-events-none fixed left-0 top-0 z-30 hidden sm:block max-w-[240px] rounded-lg border border-slate-200/90 bg-white/95 px-2.5 py-1.5 shadow-lg backdrop-blur-sm transition-opacity duration-100 dark:border-slate-700 dark:bg-slate-900/95"
+        >
+          <div ref={hoverTitleRef} className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100" />
+          <div ref={hoverHintRef} className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400" />
+        </div>
+
+        {/* Desktop Mouse & Keyboard Hint (bottom-center on wide desktop screens) */}
+        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 z-10 hidden lg:flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-300">
+          <span>ลากซ้าย: หมุนมุม</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span>ลากขวา / Shift+ลาก: เลื่อน</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span>ล้อเมาส์: ซูม</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span>ปุ่มลูกศร: เดินกล้อง</span>
+        </div>
+
+        {/* Bottom-right Google Earth-style Angle/Compass + Zoom Controls */}
+        <div
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          className="pointer-events-auto absolute bottom-2 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
+          className="pointer-events-auto absolute bottom-2 right-3 sm:bottom-4 sm:right-4 z-10 flex items-center gap-2"
         >
-          <button
-            type="button"
-            onClick={() => handleZoomStep(0.8)}
-            title="ซูมเข้า (+)"
-            aria-label="ซูมเข้า (+)"
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+          {/* Compass & Tilt Control */}
+          <div
+            role="group"
+            aria-label="เข็มทิศและมุมเอียงกล้อง"
+            className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
           >
-            <ZoomIn className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleZoomStep(1.25)}
-            title="ซูมออก (−)"
-            aria-label="ซูมออก (−)"
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            <button
+              type="button"
+              onClick={handleResetNorth}
+              title="เข็มทิศ (คลิกเพื่อหันหน้ากลับทิศมาตรฐาน)"
+              aria-label="เข็มทิศ หันกลับทิศมาตรฐาน"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            >
+              <span
+                ref={compassDialRef}
+                className="flex h-7 w-7 items-center justify-center will-change-transform"
+              >
+                <svg viewBox="0 0 28 28" className="h-6 w-6" aria-hidden="true">
+                  <circle cx="14" cy="14" r="12" fill="none" stroke="currentColor" strokeOpacity="0.22" strokeWidth="1.2" />
+                  <polygon points="14,3 17.5,14 14,12 10.5,14" fill="#ef4444" />
+                  <polygon points="14,25 17.5,14 14,16 10.5,14" fill="currentColor" fillOpacity="0.35" />
+                  <circle cx="14" cy="14" r="1.6" fill="currentColor" />
+                </svg>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleTilt}
+              title="สลับมุมเอียง 3 มิติ / มองจากด้านบน"
+              aria-label="สลับมุมเอียง 3 มิติ"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-xs font-bold text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            >
+              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3 3 8l9 5 9-5-9-5z" />
+                <path d="m3 14 9 5 9-5" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Zoom & Fit Controls (shared appearance & position with 2D) */}
+          <div
+            role="group"
+            aria-label="ควบคุมการซูมมุมมอง"
+            className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-lg backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95"
           >
-            <ZoomOut className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" aria-hidden="true" />
-          <button
-            type="button"
-            onClick={handleFitRoom}
-            title="จัดผังพอดีจอ (ดับเบิลคลิกบนพื้นว่าง)"
-            className="flex h-11 min-w-[44px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
-          >
-            <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>พอดีจอ</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => handleZoomStep(0.8)}
+              title="ซูมเข้า (+)"
+              aria-label="ซูมเข้า (+)"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            >
+              <ZoomIn className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleZoomStep(1.25)}
+              title="ซูมออก (−)"
+              aria-label="ซูมออก (−)"
+              className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            >
+              <ZoomOut className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={handleFitRoom}
+              title="จัดผังพอดีจอ (ดับเบิลคลิกบนพื้นว่าง)"
+              className="flex h-11 min-w-[44px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200 dark:text-slate-200 dark:hover:bg-slate-800 dark:active:bg-slate-700"
+            >
+              <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>พอดีจอ</span>
+            </button>
+          </div>
         </div>
 
         {contextLost && (
